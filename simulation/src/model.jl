@@ -207,16 +207,12 @@ end
 function get_rate_microbial_growth(sim::Simulation)
     p = sim.params
     s = sim.state
-
-    # Birth rate has a truncated logistic form:
-    # B(N) = b0 * N * (1 - N / C) [N < C]
-    # B(N) = 0 [N >= C]
     C = p.microbe_carrying_capacity
+
     N_vec = s.bstrains.abundance
     R_vec = s.bstrains.growthrates
     # Assumes total_abundance is correct
     N = s.bstrains.total_abundance
-
     # Birth rate is truncated to be nonnegative:
     # if sim.t > 15
     #     println("R_vec: $(R_vec), N_vec: $(N_vec), spacers: $(s.bstrains.spacers)")
@@ -238,86 +234,7 @@ function do_event_microbial_growth!(sim::Simulation, t::Float64)
     # strain_index = sample_linear_integer_weights(rng, N_vec, N)
     strain_index = sample(rng,Weights(N_vec.*R_vec))
     # Update abundance and total abundance
-    should_mutate = false
-    if p.microbe_mutation_prob > 0
-        if rand(rng) < p.microbe_mutation_prob
-            should_mutate = true
-        end
-    end
-    if should_mutate
-        if p.directional
-            if rand(rng) < .5
-                sign = -1
-            else
-                sign = 1
-            end
-            newallele = s.bstrains.growthalleles[strain_index] + sign*p.allelic_change
-            # if strain_index == 103
-            #     println("newallele of strain $(s.bstrains.ids[strain_index]): initial!")
-            # end
-            if newallele > p.max_allele || newallele < 2*(p.center_allele) - p.max_allele
-                newallele = s.bstrains.growthalleles[strain_index] - sign*p.allelic_change
-                # if strain_index == 103
-                #     println("newallele of strain $(s.bstrains.ids[strain_index]): other direction!")
-                # end
-            end
-        else
-            newallele = rand(rng,Uniform(p.center_allele-p.max_allele,p.max_allele))
-            # if strain_index == 103
-            #     println("newallele of strain $(s.bstrains.ids[strain_index]): woops!")
-            # end
-        end
-    end
-    if should_mutate
-        mutatedSpacer_strain_index = findall(x -> x == s.bstrains.spacers[strain_index], s.bstrains.spacers)
-        mutatedGrowth_strain_index = findall(x -> x == newallele, s.bstrains.growthalleles)
-        overlap = intersect(mutatedSpacer_strain_index,mutatedGrowth_strain_index)
-        @assert length(overlap) < 2 "strain index: $(strain_index),
-                                    strain id: $(s.bstrains.ids[strain_index])
-                                    spacers: $(s.bstrains.spacers[strain_index]),
-                                    growthalleles: $(s.bstrains.growthalleles[strain_index]),
-                                    directional: $(p.directional),
-                                    allelic_change: $(p.allelic_change),
-                                    allele_max: $(p.max_allele),
-                                    newallele: $(newallele),
-                                    overlap: $(overlap),
-                                    overlap strain ids: $(map(x->s.bstrains.ids[x],overlap)),
-                                    spacers: $(map(x->s.bstrains.spacers[x],overlap)),
-                                    growthalleles: $(map(x->s.bstrains.growthalleles[x],overlap))"
-        mutated_strain_index = nothing
-        if length(intersect(mutatedSpacer_strain_index,mutatedGrowth_strain_index)) == 1
-            mutated_strain_index = intersect(mutatedSpacer_strain_index,mutatedGrowth_strain_index)
-        end
-        if mutated_strain_index == nothing
-            newgrowthrate = fitness(newallele,p.center_allele,p.max_allele,p.max_fitness,p.evofunction)
-            @debug "Creating new microbial strain"
-            @debug "Old growth rate:" s.bstrains.growthrates[strain_index]
-            @debug "New growth rate:" newgrowthrate
-            id = s.bstrains.next_id
-            s.bstrains.next_id += 1
-            push!(s.bstrains.ids, id) #Adds new strain identity
-            push!(s.bstrains.abundance, 1) #Adds abundance of one to new strain identity
-            # println(s.bstrains.abundance)
-            push!(s.bstrains.spacers, s.bstrains.spacers[strain_index])
-            push!(s.bstrains.growthalleles, newallele)
-            push!(s.bstrains.growthrates, newgrowthrate)
-            # println(s.bstrains.growthrates)
-            if p.enable_output
-                write_strain(sim, "bstrains", id, s.bstrains.ids[strain_index], 0)
-                if length(s.bstrains.spacers[end]) == 0
-                    write_spacers(sim, "bspacers", id, [0])
-                else
-                    write_spacers(sim, "bspacers", id, s.bstrains.spacers[end])
-                end
-                write_growth_rate(sim, "bgrowthrates", id, newallele, newgrowthrate)
-            end
-        else
-            @debug "using old microbial strain" mutated_strain_index
-            s.bstrains.abundance[mutated_strain_index...] += 1
-        end
-    else
-        s.bstrains.abundance[strain_index] += 1
-    end
+     s.bstrains.abundance[strain_index] += 1
     s.bstrains.total_abundance += 1
 end
 
@@ -551,63 +468,90 @@ function acquire_spacer!(sim::Simulation, t::Float64, iB, jV)
     s = sim.state
 
     @debug "Acquiring spacer!" t = sim.t
-
     # Choose among protospacers in the infecting strain not already acquired
     # (If all have already been acquired, don't do anything.)
     missing_spacers = setdiff(s.vstrains.spacers[jV], s.bstrains.spacers[iB])
     if length(missing_spacers) > 0
         # Create new microbial strain with modified spacers
         @assert s.bstrains.abundance[iB] > 0
-        s.bstrains.abundance[iB] -= 1 #This does not need a change of total
-                                        #abundance alongside. We are just rearranging the identities
-
+        s.bstrains.abundance[iB] -= 1 #This does not need a change of total abundance alongside. We are just rearranging the identities
         # Add spacer, dropping the oldest one if we're at capacity
         old_spacers = s.bstrains.spacers[iB]
-
         new_spacers = if length(old_spacers) == p.n_spacers_max
             old_spacers[2:length(old_spacers)]        ### This removes thes first locus
         else                                          ### of the CRISPR cassette. Is this what original C code was?
             copy(old_spacers)
         end
-
         new_spacers_from_old = copy(new_spacers)
-
         push!(new_spacers, rand(rng, missing_spacers))
-
         mutatedSpacer_strain_index = findall(x -> x == new_spacers, s.bstrains.spacers)
-        mutatedGrowth_strain_index = findall(x -> x == s.bstrains.growthalleles[iB], s.bstrains.growthalleles)
-        overlap = intersect(mutatedSpacer_strain_index,mutatedGrowth_strain_index)
+
+        should_mutate = false
+        if p.microbe_mutation_prob > 0
+            if rand(rng) < p.microbe_mutation_prob
+                should_mutate = true
+            end
+        end
+        if should_mutate
+            if p.directional
+                if rand(rng) < 0.5
+                    sign = -1
+                else
+                    sign = 1
+                end
+                newallele = s.bstrains.growthalleles[iB] + sign * p.allelic_change
+                if newallele > p.max_allele || newallele < 2 * (p.center_allele) - p.max_allele
+                    newallele = s.bstrains.growthalleles[iB] - sign * p.allelic_change
+                end
+            else
+                newallele = rand(rng, Uniform(p.center_allele - p.max_allele, p.max_allele))
+            end
+        end
+        if should_mutate
+            allele = newallele
+        else
+            allele = s.bstrains.growthalleles[iB]
+        end
+        mutatedGrowth_strain_index = findall(x -> x == allele, s.bstrains.growthalleles)
+        overlap = intersect(mutatedSpacer_strain_index, mutatedGrowth_strain_index)
         @assert length(overlap) < 2 "strain index: $(iB),
                                     strain id: $(s.bstrains.ids[iB]),
                                     spacers: $(old_spacers),
-                                    growthalleles: $(s.bstrains.growthalleles[iB]),
+                                    directional: $(p.directional),
+                                    allelic_change: $(p.allelic_change),
+                                    allele_max: $(p.max_allele),
+                                    newallele: $(allele),
                                     new_spacers: $(new_spacers),
                                     overlap: $(overlap),
                                     overlap strain ids: $(map(x->s.bstrains.ids[x],overlap)),
                                     spacers: $(map(x->s.bstrains.spacers[x],overlap)),
                                     growthalleles: $(map(x->s.bstrains.growthalleles[x],overlap))"
+
         mutated_strain_index = nothing
-        if length(intersect(mutatedSpacer_strain_index,mutatedGrowth_strain_index)) == 1
-            mutated_strain_index = intersect(mutatedSpacer_strain_index,mutatedGrowth_strain_index)
+        if length(intersect(mutatedSpacer_strain_index, mutatedGrowth_strain_index)) == 1
+            mutated_strain_index = intersect(mutatedSpacer_strain_index, mutatedGrowth_strain_index)
         end
-        if mutated_strain_index === nothing
+        if mutated_strain_index == nothing
+            newgrowthrate = fitness(allele, p.center_allele, p.max_allele, p.max_fitness, p.evofunction)
             @debug "Creating new microbial strain"
             @debug "Old spacers:" old_spacers
             @debug "New spacers from old spacers:" new_spacers_from_old
             @debug "Missing spacers:" missing_spacers
             @debug "All new spacers:" new_spacers
+            @debug "Old growth rate:" s.bstrains.growthrates[strain_index]
+            @debug "New growth rate:" newgrowthrate
             id = s.bstrains.next_id
             s.bstrains.next_id += 1
-            push!(s.bstrains.ids, id)
-            push!(s.bstrains.abundance, 1)
+            push!(s.bstrains.ids, id) #Adds new strain identity
+            push!(s.bstrains.abundance, 1) #Adds abundance of one to new strain identity
             push!(s.bstrains.spacers, new_spacers)
-            push!(s.bstrains.growthalleles, s.bstrains.growthalleles[iB])
-            push!(s.bstrains.growthrates, s.bstrains.growthrates[iB])
-
+            push!(s.bstrains.growthalleles, allele)
+            push!(s.bstrains.growthrates, newgrowthrate)
+            # println(s.bstrains.growthrates)
             if p.enable_output
                 write_strain(sim, "bstrains", id, s.bstrains.ids[iB], s.vstrains.ids[jV])
                 write_spacers(sim, "bspacers", id, new_spacers)
-                write_growth_rate(sim, "bgrowthrates", id, s.bstrains.growthalleles[end], s.bstrains.growthrates[end])
+                write_growth_rate(sim, "bgrowthrates", id, allele, newgrowthrate)
             end
         else
             @debug "using old microbial strain" mutated_strain_index
