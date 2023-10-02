@@ -22,54 +22,32 @@ db = sim.db
 
 execute(db, "BEGIN TRANSACTION")
 # Initial output
-if p.enable_output
-    @info "initial output"
-    write_periodic_output(sim)
-
-    write_strains(sim, "bstrains", "bspacers", "bgrowthrates",
-                    state.bstrains.ids, state.bstrains.spacers,
-                    state.bstrains.growthalleles, state.bstrains.growthrates)
-    write_strains(sim, "vstrains", "vpspacers", nothing,
-                    state.vstrains.ids, state.vstrains.spacers,
-                    nothing, nothing)
-    # println("checkpoint1")
-end
-
+@info "initial output"
 # Simulation loop
 t_next_output = 0.0
-while sim.t < p.t_final
+beginTime = sim.t
+while state.vstrains.total_abundance > 0
     # Simulate exactly until the next output time
-    t_next_output = min(p.t_final, t_next_output + p.t_output)
-
-    beginTime = sim.t
-    while sim.t < t_next_output # This continues until sum of event times meet sampling time
-        do_next_event!(sim, t_next_output)
-        # println("oh")
-    end
+    # t_next_output = min(p.t_final, t_next_output + p.t_output)
+    do_next_event!(sim, t_next_output)
     endTime = sim.t
-
-    @info "Completed period: $(beginTime) to $(endTime)"
-
-    @assert sim.t >= t_next_output
+    if endTime >= beginTime + 1
+        @info "Completed period: $(beginTime) to $(endTime)"
+        beginTime = endTime
+    end
+    end_time = now()
+    elapsed_hours = Dates.value(end_time - start_time) / 1000.0*1/60*1/60
+    if elapsed_hours > 24
+        write_total_extinction(sim, 0)
+        println("HALT!")
+        break
+    end
+    if state.vstrains.total_abundance == 0
+        write_total_extinction(sim, 1)
+    end
 end
 execute(db, "COMMIT")
-
-# Record end time and elapsed
-end_time = now()
-elapsed_seconds = Dates.value(end_time - start_time) / 1000.0
-
-execute(db, "BEGIN TRANSACTION")
-execute(db,
-"INSERT INTO meta VALUES (?,?)",
-["end_time", Dates.format(end_time, "yyyy-mm-ddTHH:MM:SS")]
-)
-
-execute(db,
-"INSERT INTO meta VALUES (?,?)",
-["elapsed_seconds", elapsed_seconds]
-)
-execute(db, "COMMIT")
-
+println("Complete!")
 end
 
 
@@ -87,69 +65,23 @@ function do_next_event!(sim::Simulation, t_max::Float64)
 
     # Draw next event time using total rate
     t_next = sim.t + randexp(sim.rng) / R
+    sim.t = t_next # Time advances
 
-    if t_next > t_max
-        if t_next > p.t_final
+    total = sum(sim.event_counts)
+    @debug "event counts:" total=total, breakdown=sim.event_counts
+    @debug "event_rates:" rates=sim.event_rates
 
-            sim.t = p.t_final
+    # Sample next top-level event proportional to event rate
+    event_id = sample(sim.rng, EVENTS, Weights(sim.event_rates, R))
+    sim.event_counts[event_id] += 1
 
-                # Write periodic output
-                @debug "p.enable_output" p.enable_output
-                if p.enable_output
-                    write_periodic_output(sim)
-                end
+    @debug "begin do_event()" event_id=event_id t=t_next
+    do_event!(event_id, sim, t_next)
+    update_rates!(sim)
+    @debug "end do_event()"
 
-                @debug "bstrains:" total_abund=s.bstrains.total_abundance abund=s.bstrains.abundance spacers=s.bstrains.spacers
-                @debug "vstrains:" total_abund=s.vstrains.total_abundance abund=s.vstrains.abundance pspacers=s.vstrains.spacers
-
-        else
-            sim.t = t_max
-
-                # Write periodic output
-                @debug "p.enable_output" p.enable_output
-                if p.enable_output
-                    write_periodic_output(sim)
-                end
-
-                @debug "bstrains:" total_abund=s.bstrains.total_abundance abund=s.bstrains.abundance spacers=s.bstrains.spacers
-                @debug "vstrains:" total_abund=s.vstrains.total_abundance abund=s.vstrains.abundance pspacers=s.vstrains.spacers
-
-            sim.t = t_next # Time advances to value greater than current output time
-
-                # Sample next top-level event proportional to event rate
-                total = sum(sim.event_counts)
-                @debug "event counts:" total=total, breakdown=sim.event_counts
-                @debug "event_rates:" rates=sim.event_rates
-
-                event_id = sample(sim.rng, EVENTS, Weights(sim.event_rates, R))
-                sim.event_counts[event_id] += 1
-
-                @debug "begin do_event()" event_id=event_id t=t_next
-                do_event!(event_id, sim, t_next)
-                update_rates!(sim)
-                @debug "end do_event()"
-
-                @debug "bstrains:" total_abund=s.bstrains.total_abundance abund=s.bstrains.abundance spacers=s.bstrains.spacers
-                @debug "vstrains:" total_abund=s.vstrains.total_abundance abund=s.vstrains.abundance pspacers=s.vstrains.spacers
-        end
-    else
-        sim.t = t_next # Time advances
-                total = sum(sim.event_counts)
-                @debug "event counts:" total=total, breakdown=sim.event_counts
-                @debug "event_rates:" rates=sim.event_rates
-
-                # Sample next top-level event proportional to event rate
-                event_id = sample(sim.rng, EVENTS, Weights(sim.event_rates, R))
-                sim.event_counts[event_id] += 1
-
-                @debug "begin do_event()" event_id=event_id t=t_next
-                do_event!(event_id, sim, t_next)
-                update_rates!(sim)
-                @debug "end do_event()"
-
-                @debug "bstrains:" total_abund=s.bstrains.total_abundance abund=s.bstrains.abundance spacers=s.bstrains.spacers
-                @debug "vstrains:" total_abund=s.vstrains.total_abundance abund=s.vstrains.abundance pspacers=s.vstrains.spacers
-    end
+    @debug "bstrains:" total_abund=s.bstrains.total_abundance abund=s.bstrains.abundance spacers=s.bstrains.spacers
+    @debug "vstrains:" total_abund=s.vstrains.total_abundance abund=s.vstrains.abundance pspacers=s.vstrains.spacers
 end
 
 
@@ -269,9 +201,7 @@ function do_event_microbial_death!(sim::Simulation, t::Float64)
     # Remove extinct strain but keep first index that is reserved
     ## for memoryless immigrants
     if s.bstrains.abundance[strain_index] == 0
-        if p.enable_output
-            write_extinction(sim, "bextinctions", s.bstrains.ids[strain_index])
-        end
+        write_extinction(sim, "bextinctions", s.bstrains.ids[strain_index])
     end
     if s.bstrains.abundance[strain_index] == 0 && strain_index != 1
         remove_strain!(s.bstrains, strain_index)
@@ -331,9 +261,7 @@ function do_event_viral_decay!(sim::Simulation, t::Float64)
 
     # Remove extinct strain
     if s.vstrains.abundance[strain_index] == 0
-        if p.enable_output
-            write_extinction(sim, "vextinctions", s.vstrains.ids[strain_index])
-        end
+        write_extinction(sim, "vextinctions", s.vstrains.ids[strain_index])
         remove_strain!(s.vstrains, strain_index)
     end
 end
@@ -405,17 +333,13 @@ function do_event_contact!(sim::Simulation, t::Float64)
 
     # Remove extinct strain
     if s.vstrains.abundance[jV] == 0
-        if params.enable_output
-            write_extinction(sim, "vextinctions", s.vstrains.ids[jV])
-        end
+        write_extinction(sim, "vextinctions", s.vstrains.ids[jV])
         remove_strain!(s.vstrains, jV)
     end
     # Remove extinct strain but keep first index that is reserved
     ## for memoryless immigrants
     if s.bstrains.abundance[iB] == 0
-        if params.enable_output
-            write_extinction(sim, "bextinctions", s.bstrains.ids[iB])
-        end
+        write_extinction(sim, "bextinctions", s.bstrains.ids[iB])
     end
     if s.bstrains.abundance[iB] == 0 && iB != 1
         remove_strain!(s.bstrains, iB)
@@ -559,11 +483,9 @@ function acquire_spacer!(sim::Simulation, t::Float64, iB, jV)
             push!(s.bstrains.growthalleles, allele)
             push!(s.bstrains.growthrates, newgrowthrate)
             # println(s.bstrains.growthrates)
-            if p.enable_output
-                write_strain(sim, "bstrains", id, s.bstrains.ids[iB], s.vstrains.ids[jV])
-                write_spacers(sim, "bspacers", id, new_spacers)
-                write_growth_rate(sim, "bgrowthrates", id, allele, newgrowthrate)
-            end
+                #write_strain(sim, "bstrains", id, s.bstrains.ids[iB], s.vstrains.ids[jV])
+                #write_spacers(sim, "bspacers", id, new_spacers)
+                #write_growth_rate(sim, "bgrowthrates", id, allele, newgrowthrate)
         else
             @debug "using old microbial strain" mutated_strain_index
             s.bstrains.abundance[mutated_strain_index...] += 1
@@ -600,8 +522,7 @@ function mutate_virus!(sim, virus_id, mut_loci, contact_b_id)
     s.vstrains.total_abundance += 1
     push!(s.vstrains.spacers, new_pspacers)
 
-    if p.enable_output
-        write_strain(sim, "vstrains", id, s.vstrains.ids[virus_id], s.bstrains.ids[contact_b_id])
-        write_spacers(sim, "vpspacers", id, new_pspacers)
-    end
+
+    #write_strain(sim, "vstrains", id, s.vstrains.ids[virus_id], s.bstrains.ids[contact_b_id])
+    #write_spacers(sim, "vpspacers", id, new_pspacers)
 end

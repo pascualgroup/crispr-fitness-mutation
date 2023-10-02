@@ -56,6 +56,7 @@ There are four events:
 2. Bacterial death: `const BACTERIAL_DEATH = 2`
 3. Viral decay: `const VIRAL_DECAY = 3`
 4. Contact: `const CONTACT = 4`
+4. Bacterial immigration: `const MICROBIAL_IMMIGRATION = 5`
 
 ### Bacterial growth
 

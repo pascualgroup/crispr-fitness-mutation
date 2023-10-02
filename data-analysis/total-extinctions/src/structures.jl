@@ -284,17 +284,6 @@ mutable struct Simulation
         # Use random seed if provided, or generate one
         rng_seed = p.rng_seed === nothing ? UInt64(rand(RandomDevice(), UInt32)) : p.rng_seed
         p.rng_seed = rng_seed
-
-        #write_csv(meta_file, "rng_seed", rng_seed)
-
-        execute(db,
-            "INSERT INTO meta VALUES (?,?)", ["rng_seed", Int64(rng_seed)]
-        )
-        execute(db,
-            "INSERT INTO meta VALUES (?,?)",
-            ["start_time", Dates.format(start_time, "yyyy-mm-ddTHH:MM:SS")]
-        )
-
         # Initialize & validate model state
         # println("$([p.n_bstrains, p.n_hosts_per_bstrain, p.initial_locus_allele,
         # p.n_vstrains, p.n_particles_per_vstrain, p.n_protospacers])")

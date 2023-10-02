@@ -23,15 +23,15 @@ function main()
     end
 
     # New database
-    if ispath("sweep_db_gathered.sqlite")
-        error("`sweep_db_gathered.sqlite` exists; please move or delete")
+    if ispath("total-extinctions.sqlite")
+        error("`total-extinctions.sqlite` exists; please move or delete")
     end
 
     # Copy source database as starting point
-    cp("sweep_db.sqlite", "sweep_db_gathered.sqlite")
+    cp("sweep_db.sqlite", "total-extinctions.sqlite")
 
     run_pairs = let
-        db = SQLite.DB("sweep_db_gathered.sqlite")
+        db = SQLite.DB("total-extinctions.sqlite")
         execute(db, "CREATE TABLE run_meta (run_id INTEGER, key, value)")
         [(run_id, run_dir) for (run_id, run_dir) in execute(db, "SELECT run_id, run_dir FROM runs")]
     end
@@ -39,9 +39,9 @@ function main()
     is_first = true
     table_names = []
     # one connection is enough because sub-databases are being detached 
-    db = SQLite.DB("sweep_db_gathered.sqlite")
+    db = SQLite.DB("total-extinctions.sqlite")
     for (run_id, run_dir) in run_pairs
-        rundb_path = joinpath(run_dir, "output.sqlite")
+        rundb_path = joinpath(run_dir, "total-extinctions_output.sqlite")
 
         if !ispath(rundb_path)
             println("Missing: $(rundb_path)")
@@ -52,7 +52,7 @@ function main()
 
         execute(db, "BEGIN TRANSACTION")
         # Connect to output database as sub-db inside connection
-        execute(db, "ATTACH DATABASE '$(joinpath(run_dir, "output.sqlite"))' as rundb")
+        execute(db, "ATTACH DATABASE '$(joinpath(run_dir, "total-extinctions_output.sqlite"))' as rundb")
         # If this is the first run, initialize tables
         if is_first
             for (table_name, sql) in execute(
@@ -86,7 +86,7 @@ end
 
 function createindices()
     println("(Creating run_id indices...)")
-    db = SQLite.DB("sweep_db_gathered.sqlite")
+    db = SQLite.DB("total-extinctions.sqlite")
     execute(db, "BEGIN TRANSACTION")
     for (table_name,) in execute(
         db, "SELECT name FROM sqlite_schema

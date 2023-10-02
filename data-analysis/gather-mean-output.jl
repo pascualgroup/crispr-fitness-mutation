@@ -80,7 +80,7 @@ function main()
             execute(db, "INSERT INTO $(table_name) SELECT *, ? FROM combodb.$(table_name)", (combo_id,))
         end
         execute(db, "COMMIT")
-        execute(db, "DETACH DATABASE rundb")
+        execute(db, "DETACH DATABASE combodb")
     end
 
     dbOutput = SQLite.DB(joinpath(an_dir,"mean-$(analysisType).sqlite"))

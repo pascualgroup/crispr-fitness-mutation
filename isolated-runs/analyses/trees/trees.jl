@@ -60,6 +60,8 @@ dbTemp = SQLite.DB()
 # execute(dbTemp, "CREATE TABLE vabundance (t REAL, vstrain_id INTEGER, abundance INTEGER)")
 execute(dbTemp, "CREATE TABLE bstrains (t_creation REAL, bstrain_id INTEGER, parent_bstrain_id INTEGER, infecting_vstrain_id INTEGER)")
 execute(dbTemp, "CREATE TABLE vstrains (t_creation REAL, vstrain_id INTEGER, parent_vstrain_id INTEGER, infected_bstrain_id INTEGER)")
+execute(dbTemp, "CREATE TABLE bextinctions (bstrain_id INTEGER, t_extinction REAL)")
+execute(dbTemp, "CREATE TABLE vextinctions (vstrain_id INTEGER, t_extinction REAL)")
 execute(dbTemp, "CREATE TABLE babundance (t REAL, bstrain_id INTEGER, abundance INTEGER)")
 execute(dbTemp, "CREATE TABLE vabundance (t REAL, vstrain_id INTEGER, abundance INTEGER)")
 
@@ -74,6 +76,12 @@ FROM dbSim.bstrains WHERE run_id = $(run_id);")
 execute(dbTemp,"INSERT INTO vstrains (t_creation, vstrain_id,parent_vstrain_id,infected_bstrain_id)
 SELECT t_creation, vstrain_id,parent_vstrain_id,infected_bstrain_id
 FROM dbSim.vstrains WHERE run_id = $(run_id);")
+execute(dbTemp,"INSERT INTO bextinctions (bstrain_id, t_extinction)
+SELECT bstrain_id, t_extinction
+FROM dbSim.bextinctions WHERE run_id = $(run_id);")
+execute(dbTemp,"INSERT INTO vextinctions (vstrain_id, t_extinction)
+SELECT vstrain_id, t_extinction
+FROM dbSim.vextinctions WHERE run_id = $(run_id);")
 execute(dbTemp,"INSERT INTO babundance (t, bstrain_id, abundance)
 SELECT t, bstrain_id, abundance FROM dbSim.babundance WHERE run_id = $(run_id);")
 execute(dbTemp,"INSERT INTO vabundance (t, vstrain_id, abundance)
@@ -173,7 +181,7 @@ function nextGeneration!(strainTreeOrder::DataFrame,
             union!(parentStrainIDs,strain.parent_vstrain_id)
         end
         sort!(parentStrainIDs)
-        println("Parents of MRCA are: $(parentStrainIDs)")
+        # println("Parents of MRCA are: $(parentStrainIDs)")
         treePositions!(strainTreeOrder,parentStrainIDs,lineages,strainType)
     end
     if strainType == "microbe"
@@ -185,7 +193,7 @@ function nextGeneration!(strainTreeOrder::DataFrame,
             union!(parentStrainIDs,strain.parent_bstrain_id)
         end
         sort!(parentStrainIDs)
-        println("Parents of MRCA are: $(parentStrainIDs)")
+        # println("Parents of MRCA are: $(parentStrainIDs)")
         treePositions!(strainTreeOrder,parentStrainIDs,lineages,strainType)
     end
 end
@@ -195,7 +203,7 @@ function treePositions!(strainTreeOrder::DataFrame,
     if strainType == "virus"
         s = "v"
         for parentID in parentStrainIDs
-            println("Locating descendants of strain $(parentID)")
+            # println("Locating descendants of strain $(parentID)")
             subMRCA_ids = [strain for (strain,) in execute(dbTemp, "SELECT $(s)strain_id FROM $(s)strains
             WHERE parent_$(s)strain_id = $(parentID) ORDER BY $(s)strain_id")]
             firstTreeStrainID = strainTreeOrder[strainTreeOrder.vstrain_id .== parentID,:].tree_vstrain_id[1]
@@ -213,7 +221,7 @@ function treePositions!(strainTreeOrder::DataFrame,
     if strainType == "microbe"
         s = "b"
         for parentID in parentStrainIDs
-            println("Locating descendants of strain $(parentID)")
+            # println("Locating descendants of strain $(parentID)")
             subMRCA_ids = [strain for (strain,) in execute(dbTemp, "SELECT $(s)strain_id FROM $(s)strains
             WHERE parent_$(s)strain_id = $(parentID) ORDER BY $(s)strain_id")]
             firstTreeStrainID = strainTreeOrder[strainTreeOrder.bstrain_id .== parentID,:].tree_bstrain_id[1]
@@ -268,157 +276,53 @@ end
 function findExtinctionTimes(strainType::String)
     if strainType == "virus"
         s = "v"
-        strainsBefore = Int64[1]
-        endTime = maximum([time for (time,) in execute(dbTemp,"SELECT DISTINCT t
-            FROM $(s)abundance ORDER BY t")])
-        for (time,) in execute(dbTemp,"SELECT DISTINCT t
-            FROM $(s)abundance ORDER BY t")
-            println("Searching for strain extinctions at time = $(time)")
-            strains = [strain for (strain,) in execute(dbTemp,"SELECT $(s)strain_id FROM $(s)abundance
-                WHERE t = $(time)")]
-            extinct = setdiff(strainsBefore,strains)
-            if length(extinct) > 0
-                for strain in extinct
-                    (t,) = execute(dbTemp, "SELECT t_creation FROM $(s)strains
-                    WHERE $(s)strain_id = $(strain)")
-                    execute(dbOutput,"INSERT INTO $(s)strain_creation_extinction
-                    VALUES (?,?,?)",(strain,t.t_creation,time-1))
-
-                    (pstrain,) = execute(dbTemp, "SELECT parent_$(s)strain_id FROM $(s)strains
-                    WHERE $(s)strain_id = $(strain)")
-                    (ibstrain,) = execute(dbTemp, "SELECT infected_bstrain_id FROM $(s)strains
-                    WHERE $(s)strain_id = $(strain)")
-
-                    (pstrain,) = execute(dbOutput, "SELECT tree_$(s)strain_id
-                    FROM tree_$(s)strain_order WHERE $(s)strain_id = $(pstrain.parent_vstrain_id)")
-                    (ibstrain,) = execute(dbOutput, "SELECT tree_bstrain_id
-                    FROM tree_bstrain_order WHERE bstrain_id = $(ibstrain.infected_bstrain_id)")
-
-                    (tree,) = execute(dbOutput, "SELECT tree_$(s)strain_id
-                    FROM tree_$(s)strain_order WHERE $(s)strain_id = $(strain)")
-                    execute(dbOutput,"INSERT INTO tree_$(s)strain_creation_extinction
-                    VALUES (?,?,?,?,?)",(tree.tree_vstrain_id,t.t_creation,time-1,
-                    pstrain.tree_vstrain_id,ibstrain.tree_bstrain_id))
-                end
-            end
-            if time == endTime
-                for strain in strains
-                    (t,) = execute(dbTemp, "SELECT t_creation FROM $(s)strains
-                    WHERE $(s)strain_id = $(strain)")
-                    execute(dbOutput,"INSERT INTO $(s)strain_creation_extinction
-                    VALUES (?,?,?)",(strain,t.t_creation,time))
-
-                    (pstrain,) = execute(dbTemp, "SELECT parent_$(s)strain_id FROM $(s)strains
-                    WHERE $(s)strain_id = $(strain)")
-                    (ibstrain,) = execute(dbTemp, "SELECT infected_bstrain_id FROM $(s)strains
-                    WHERE $(s)strain_id = $(strain)")
-
-                    (pstrain,) = execute(dbOutput, "SELECT tree_$(s)strain_id
-                    FROM tree_$(s)strain_order WHERE $(s)strain_id = $(pstrain.parent_vstrain_id)")
-                    (ibstrain,) = execute(dbOutput, "SELECT tree_bstrain_id
-                    FROM tree_bstrain_order WHERE bstrain_id = $(ibstrain.infected_bstrain_id)")
-
-                    (tree,) = execute(dbOutput, "SELECT tree_$(s)strain_id
-                    FROM tree_$(s)strain_order WHERE $(s)strain_id = $(strain)")
-                    execute(dbOutput,"INSERT INTO tree_$(s)strain_creation_extinction
-                    VALUES (?,?,?,?,?)",(tree.tree_vstrain_id,t.t_creation,time,
-                    pstrain.tree_vstrain_id,ibstrain.tree_bstrain_id))
-                end
-            end
-            strainsBefore = strains[:]
+        for (strain,) in execute(dbTemp,"SELECT $(s)strain_id FROM $(s)extinctions
+                                    ORDER BY $(s)strain_id")
+            (t,) = execute(dbTemp, "SELECT t_creation FROM $(s)strains
+            WHERE $(s)strain_id = $(strain)")
+            (tExt,) = execute(dbTemp, "SELECT t_extinction FROM $(s)extinctions
+            WHERE $(s)strain_id = $(strain)")
+            execute(dbOutput,"INSERT INTO $(s)strain_creation_extinction
+            VALUES (?,?,?)",(strain,t.t_creation,tExt.t_extinction))
+            (pstrain,) = execute(dbTemp, "SELECT parent_$(s)strain_id FROM $(s)strains
+            WHERE $(s)strain_id = $(strain)")
+            (ibstrain,) = execute(dbTemp, "SELECT infected_bstrain_id FROM $(s)strains
+            WHERE $(s)strain_id = $(strain)")
+            (pstrain,) = execute(dbOutput, "SELECT tree_$(s)strain_id
+            FROM tree_$(s)strain_order WHERE $(s)strain_id = $(pstrain.parent_vstrain_id)")
+            (ibstrain,) = execute(dbOutput, "SELECT tree_bstrain_id
+            FROM tree_bstrain_order WHERE bstrain_id = $(ibstrain.infected_bstrain_id)")
+            (tree,) = execute(dbOutput, "SELECT tree_$(s)strain_id
+            FROM tree_$(s)strain_order WHERE $(s)strain_id = $(strain)")
+            execute(dbOutput,"INSERT INTO tree_$(s)strain_creation_extinction
+            VALUES (?,?,?,?,?)",(tree.tree_vstrain_id,t.t_creation,tExt.t_extinction,
+            pstrain.tree_vstrain_id,ibstrain.tree_bstrain_id))
         end
     end
     if strainType == "microbe"
         s = "b"
-        strainsBefore = Int64[1]
-        endTime = maximum([time for (time,) in execute(dbTemp,"SELECT DISTINCT t
-            FROM $(s)abundance ORDER BY t")])
-        naiveAlive = true # CHANGE THIS
-        # WHEN YOU INCLUDE A BETTER VERSION OF IMMIGRATION
-        for (time,) in execute(dbTemp,"SELECT DISTINCT t
-            FROM $(s)abundance ORDER BY t")
-            println("Searching for strain extinctions at time = $(time)")
-            strains = [strain for (strain,) in execute(dbTemp,"SELECT $(s)strain_id FROM $(s)abundance
-                WHERE t = $(time)")]
-            extinct = setdiff(strainsBefore,strains)
-            (naive,) = execute(dbTemp,"SELECT abundance FROM $(s)abundance
-            WHERE $(s)strain_id = 1 AND t = $(time)") # CHANGE THIS
-            # WHEN YOU INCLUDE A BETTER VERSION OF IMMIGRATION
-            if naive.abundance == 0 && naiveAlive # CHANGE THIS
-            # WHEN YOU INCLUDE A BETTER VERSION OF IMMIGRATION
-                (t,) = execute(dbTemp, "SELECT t_creation FROM $(s)strains
-                WHERE $(s)strain_id = 1")
-                execute(dbOutput,"INSERT INTO $(s)strain_creation_extinction
-                VALUES (?,?,?)",(1,t.t_creation,time-1))
-
-                (pstrain,) = execute(dbTemp, "SELECT parent_$(s)strain_id FROM $(s)strains
-                WHERE $(s)strain_id = 1")
-                (ivstrain,) = execute(dbTemp, "SELECT infecting_vstrain_id FROM $(s)strains
-                WHERE $(s)strain_id = 1")
-
-                (pstrain,) = execute(dbOutput, "SELECT tree_$(s)strain_id
-                FROM tree_$(s)strain_order WHERE $(s)strain_id = $(pstrain.parent_bstrain_id)")
-                (ivstrain,) = execute(dbOutput, "SELECT tree_vstrain_id
-                FROM tree_vstrain_order WHERE vstrain_id = $(ivstrain.infecting_vstrain_id)")
-
-                execute(dbOutput,"INSERT INTO tree_$(s)strain_creation_extinction
-                VALUES (?,?,?,?,?)",(1,t.t_creation,time-1,
-                pstrain.tree_bstrain_id,ivstrain.tree_vstrain_id))
-                naiveAlive = false
-            end
-            if length(extinct) > 0
-                for strain in extinct
-                    (t,) = execute(dbTemp, "SELECT t_creation FROM $(s)strains
-                    WHERE $(s)strain_id = $(strain)")
-                    execute(dbOutput,"INSERT INTO $(s)strain_creation_extinction
-                    VALUES (?,?,?)",(strain,t.t_creation,time-1))
-
-                    (pstrain,) = execute(dbTemp, "SELECT parent_$(s)strain_id FROM $(s)strains
-                    WHERE $(s)strain_id = $(strain)")
-                    (ivstrain,) = execute(dbTemp, "SELECT infecting_vstrain_id FROM $(s)strains
-                    WHERE $(s)strain_id = $(strain)")
-
-                    (pstrain,) = execute(dbOutput, "SELECT tree_$(s)strain_id
-                    FROM tree_$(s)strain_order WHERE $(s)strain_id = $(pstrain.parent_bstrain_id)")
-                    (ivstrain,) = execute(dbOutput, "SELECT tree_vstrain_id
-                    FROM tree_vstrain_order WHERE vstrain_id = $(ivstrain.infecting_vstrain_id)")
-
-                    (tree,) = execute(dbOutput, "SELECT tree_$(s)strain_id
-                    FROM tree_$(s)strain_order WHERE $(s)strain_id = $(strain)")
-                    execute(dbOutput,"INSERT INTO tree_$(s)strain_creation_extinction
-                    VALUES (?,?,?,?,?)",(tree.tree_bstrain_id,t.t_creation,time-1,
-                    pstrain.tree_bstrain_id,ivstrain.tree_vstrain_id))
-                end
-            end
-            if time == endTime
-                strains = [strain for (strain,abundance)
-                in execute(dbTemp,"SELECT $(s)strain_id, abundance FROM $(s)abundance
-                    WHERE t = $(time)") if abundance != 0] # CHANGE THIS
-                    # WHEN YOU INCLUDE A BETTER VERSION OF IMMIGRATION
-                for strain in strains
-                    (t,) = execute(dbTemp, "SELECT t_creation FROM $(s)strains
-                    WHERE $(s)strain_id = $(strain)")
-                    execute(dbOutput,"INSERT INTO $(s)strain_creation_extinction
-                    VALUES (?,?,?)",(strain,t.t_creation,time))
-
-                    (pstrain,) = execute(dbTemp, "SELECT parent_$(s)strain_id FROM $(s)strains
-                    WHERE $(s)strain_id = $(strain)")
-                    (ivstrain,) = execute(dbTemp, "SELECT infecting_vstrain_id FROM $(s)strains
-                    WHERE $(s)strain_id = $(strain)")
-
-                    (pstrain,) = execute(dbOutput, "SELECT tree_$(s)strain_id
-                    FROM tree_$(s)strain_order WHERE $(s)strain_id = $(pstrain.parent_bstrain_id)")
-                    (ivstrain,) = execute(dbOutput, "SELECT tree_vstrain_id
-                    FROM tree_vstrain_order WHERE vstrain_id = $(ivstrain.infecting_vstrain_id)")
-
-                    (tree,) = execute(dbOutput, "SELECT tree_$(s)strain_id
-                    FROM tree_$(s)strain_order WHERE $(s)strain_id = $(strain)")
-                    execute(dbOutput,"INSERT INTO tree_$(s)strain_creation_extinction
-                    VALUES (?,?,?,?,?)",(tree.tree_bstrain_id,t.t_creation,time,
-                    pstrain.tree_bstrain_id,ivstrain.tree_vstrain_id))
-                end
-            end
-            strainsBefore = strains[:]
+        println("Searching for strain extinctions")
+        for (strain,) in execute(dbTemp,"SELECT $(s)strain_id FROM $(s)extinctions 
+                                    ORDER BY $(s)strain_id")
+            (t,) = execute(dbTemp, "SELECT t_creation FROM $(s)strains
+            WHERE $(s)strain_id = $(strain)")
+            (tExt,) = execute(dbTemp, "SELECT t_extinction FROM $(s)extinctions
+            WHERE $(s)strain_id = $(strain)")
+            execute(dbOutput,"INSERT INTO $(s)strain_creation_extinction
+            VALUES (?,?,?)",(strain,t.t_creation,tExt.t_extinction))
+            (pstrain,) = execute(dbTemp, "SELECT parent_$(s)strain_id FROM $(s)strains
+            WHERE $(s)strain_id = $(strain)")
+            (ivstrain,) = execute(dbTemp, "SELECT infecting_vstrain_id FROM $(s)strains
+            WHERE $(s)strain_id = $(strain)")
+            (pstrain,) = execute(dbOutput, "SELECT tree_$(s)strain_id
+            FROM tree_$(s)strain_order WHERE $(s)strain_id = $(pstrain.parent_bstrain_id)")
+            (ivstrain,) = execute(dbOutput, "SELECT tree_vstrain_id
+            FROM tree_vstrain_order WHERE vstrain_id = $(ivstrain.infecting_vstrain_id)")
+            (tree,) = execute(dbOutput, "SELECT tree_$(s)strain_id
+            FROM tree_$(s)strain_order WHERE $(s)strain_id = $(strain)")
+            execute(dbOutput,"INSERT INTO tree_$(s)strain_creation_extinction
+            VALUES (?,?,?,?,?)",(tree.tree_bstrain_id,t.t_creation,tExt.t_extinction,
+            pstrain.tree_bstrain_id,ivstrain.tree_vstrain_id))
         end
     end
 end
@@ -474,7 +378,8 @@ function MRCAtimeSeries(lineages::Dict{Int64,Array{Int64,1}},strainType::String)
         ancestry = Dict{Int64,Array{Int64,1}}()
         for (strain_id,) in execute(dbTemp,"SELECT DISTINCT $(s)strain_id FROM $(s)strains
             ORDER BY t_creation")
-            ancestry[strain_id] = searchAncestry(strain_id,strainType)
+            anc = searchAncestry(strain_id,strainType)
+            ancestry[strain_id] = anc[anc.!=strain_id]
         end
         initialStrains = [strain_id for (strain_id,) in execute(dbTemp,"SELECT $(s)strain_id
         FROM $(s)strains WHERE parent_$(s)strain_id = 0 ORDER BY $(s)strain_id")]
@@ -531,7 +436,8 @@ function MRCAtimeSeries(lineages::Dict{Int64,Array{Int64,1}},strainType::String)
         ancestry = Dict{Int64,Array{Int64,1}}()
         for (strain_id,) in execute(dbTemp,"SELECT DISTINCT $(s)strain_id FROM $(s)strains
             ORDER BY t_creation")
-            ancestry[strain_id] = searchAncestry(strain_id,strainType)
+            anc = searchAncestry(strain_id,strainType)
+            ancestry[strain_id] = anc[anc.!=strain_id]
         end
         initialStrains =[strain_id for (strain_id,) in execute(dbTemp,"SELECT $(s)strain_id
         FROM $(s)strains WHERE parent_$(s)strain_id = 0 ORDER BY $(s)strain_id")]

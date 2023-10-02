@@ -25,12 +25,12 @@ if  sys.argv[2] ==  'abundances':
     print('Compiling abundance plots for {0}'.format(sys.argv[1]))
 
 resolve = 500
-imgTypes = ["png"]
-treeImgTypes = ["png"]
+imgTypes = ["pdf"]
+treeImgTypes = ["pdf"]
 # graphImgTypes = ["pdf"]
 figxy = (15,15) # setting for tree abundance figure
 hratio = [1,3] # setting for tree abundance figure
-maxticksize = 400 # setting for abundances on individual branches of tree
+maxticksize = 100 # setting for abundances on individual branches of tree
 treepalette = 'turbo' # Color palette for tree: use contiguous color palette
 babundthreshold  = float(sys.argv[3])/100 # this is %/100 of total population size
 vabundthreshold  = float(sys.argv[4])/100 # this is %/100 of total population size
@@ -62,14 +62,16 @@ PLOT_PATH = os.path.join(SCRIPT_PATH,'isolates',run,'outputs')
 # DBTRI_PATH = os.path.join('/Volumes','Yadgah',dir,'tripartite-networks_output.sqlite') # local
 # PLOT_PATH = os.path.join('/Volumes','Yadgah') # local
 # DBSIM_PATH = os.path.join('/Volumes','Yadgah',dir,'{}.sqlite'.format(run))
-# DBTREE_PATH = os.path.join('/Users/armun/Dropbox/Current/Projects/microbe-virus-crispr/stochastic-crispr/trees_output.sqlite')
-# conSim = sqlite3.connect(DBSIM_PATH)
-# curSim = conSim.cursor()
-# run_id = curSim.execute('SELECT DISTINCT run_id FROM summary').fetchall()
-# run_id = run_id[0][0]
-# ID = curSim.execute('SELECT combo_id,replicate FROM runs WHERE run_id = {}'.format(run_id)).fetchall()
-# combo_id = ID[0][0]
-# replicate = ID[0][1]
+DBSIM_PATH = os.path.join('/Volumes', 'Yadgah','sylvain-martin-collab/9_MOI3/isolates/runID1265-c7-r65/runID1265-c7-r65.sqlite')
+DBMATCH_PATH = os.path.join('/Volumes', 'Yadgah','sylvain-martin-collab/9_MOI3/isolates/runID1265-c7-r65/matches_output.sqlite')
+DBTREE_PATH = os.path.join('/Volumes', 'Yadgah','sylvain-martin-collab/9_MOI3/isolates/runID1265-c7-r65/trees_output.sqlite')
+conSim = sqlite3.connect(DBSIM_PATH)
+curSim = conSim.cursor()
+run_id = curSim.execute('SELECT DISTINCT run_id FROM summary').fetchall()
+run_id = run_id[0][0]
+ID = curSim.execute('SELECT combo_id,replicate FROM runs WHERE run_id = {}'.format(run_id)).fetchall()
+combo_id = ID[0][0]
+replicate = ID[0][1]
 
 if not os.path.isdir(PLOT_PATH):
     os.makedirs (PLOT_PATH)
@@ -94,10 +96,10 @@ if sys.argv[2] == 'trees':
     # Generate tree figures and treeID and colorID info
     vAbunds,vKeepTreeStrainsDF, vSpeciesColorDict, _, _, figV, axesV = \
     tree.speciesTreePlot(run_id,'virus',DBSIM_PATH,DBTREE_PATH,\
-    treepalette,maxticksize,figxy,hratio,vabundthreshold)
+    treepalette,maxticksize,figxy,hratio,vabundthreshold, False)
     bAbunds,bKeepTreeStrainsDF, bSpeciesColorDict, _, _, figB, axesB = \
     tree.speciesTreePlot(run_id,'microbe',DBSIM_PATH,DBTREE_PATH,\
-    treepalette,maxticksize,figxy,hratio,babundthreshold)
+    treepalette,maxticksize,figxy,hratio,babundthreshold, False)
     if len(sys.argv) > 5:
         stamps.treetimes(run_id,curSim,conTri,axesV,axesB,times,False,\
         vAbunds,bAbunds,vKeepTreeStrainsDF,bKeepTreeStrainsDF)
@@ -131,10 +133,10 @@ if sys.argv[2] == 'trees':
 if sys.argv[2] == 'abundances':
     bAbunds, _, bSpeciesColorDict, _, _, _, _  = \
     tree.speciesTreePlot(run_id,'microbe',DBSIM_PATH,DBTREE_PATH,\
-    treepalette,maxticksize,figxy,hratio,babundthreshold)
+    treepalette,maxticksize,figxy,hratio,babundthreshold,False)
     vAbunds, _, vSpeciesColorDict, _, _, _, _ = \
     tree.speciesTreePlot(run_id,'virus',DBSIM_PATH,DBTREE_PATH,\
-    treepalette,maxticksize,figxy,hratio,vabundthreshold)
+    treepalette,maxticksize,figxy,hratio,vabundthreshold,False)
     bAbunds = bAbunds[bAbunds.t <= max(vAbunds.t)]
     bAbunds = bAbunds[bAbunds['abundance']>0]
     # This is to set abundances to log scale
@@ -184,10 +186,10 @@ if sys.argv[2] == 'abundances':
 if sys.argv[2] == 'diversity':
     bAbunds, _, bSpeciesColorDict, _, _, _, _  = \
     tree.speciesTreePlot(run_id,'microbe',DBSIM_PATH,DBTREE_PATH,\
-    treepalette,maxticksize,figxy,hratio,babundthreshold)
+    treepalette,maxticksize,figxy,hratio,babundthreshold,False)
     vAbunds, _, vSpeciesColorDict, _, _, _, _ = \
     tree.speciesTreePlot(run_id,'virus',DBSIM_PATH,DBTREE_PATH,\
-    treepalette,maxticksize,figxy,hratio,vabundthreshold)
+    treepalette,maxticksize,figxy,hratio,vabundthreshold,False)
     bAbunds = bAbunds[bAbunds.t <= max(vAbunds.t)]
     bAbunds = bAbunds[bAbunds['abundance']>0]
     # This is to set abundances to log scale
@@ -880,6 +882,7 @@ if sys.argv[2] == 'MRCA':
     pairwiseVirus = pd.read_sql_query("SELECT t,vstrain_id_sample_1, vstrain_id_sample_2,\
                             lineage, MRCA_vstrain_id, t_creation \
                             FROM pairwise_MRCA_vstrains", conTree)
+    ######
     vfreq = vfreq.rename(columns={'vstrain_id':'vstrain_id_sample_1'})
     pairwiseVirus = pairwiseVirus.merge(vfreq,on=['t','vstrain_id_sample_1'])
     pairwiseVirus = pairwiseVirus.rename(columns={'vfreq':'vfreq_sample_1'})
@@ -893,6 +896,28 @@ if sys.argv[2] == 'MRCA':
                         .agg(norm=('prob','sum')).reset_index()
     pairwiseVirus = pairwiseVirus.merge(norm,on=['t','lineage'])
     pairwiseVirus['prob'] = np.array(pairwiseVirus['prob'])/np.array(pairwiseVirus['norm'])
+    ######
+    vinf = pd.read_sql_query("SELECT t, bstrain_id, vstrain_id \
+                            FROM bstrain_to_vstrain_0matches", conMatch)\
+            .merge(microbe_stacked,on=['t','bstrain_id'])\
+            .merge(microbe_total,on=['t']).rename(columns={'Microbial Abundance':'btotal'})
+    vinf['bfreq'] = np.array(vinf['abundance'])/np.array(vinf['btotal'])
+    vinf = vinf.groupby(['t','vstrain_id']).agg(bfreq=('bfreq','sum')).reset_index()
+    vinf = vfreq.merge(vinf,on=['t','vstrain_id']).rename(columns={'vstrain_id':'vstrain_id_sample_1'})
+    vinf['vfreq'] = vinf['vfreq']*vinf['bfreq']
+    vinf = vinf.drop(columns=['bfreq'])
+    pairwiseVirus = pairwiseVirus.merge(vinf,on=['t','vstrain_id_sample_1'])
+    pairwiseVirus = pairwiseVirus.rename(columns={'vfreq':'vfreq_sample_1'})
+    vinf = vinf.rename(columns={'vstrain_id_sample_1':'vstrain_id_sample_2'})
+    pairwiseVirus = pairwiseVirus.merge(vinf,on=['t','vstrain_id_sample_2'])
+    pairwiseVirus = pairwiseVirus.rename(columns={'vfreq':'vfreq_sample_2'})
+    pairwiseVirus['prob'] = np.array(pairwiseVirus['vfreq_sample_1'])\
+                                *np.array(pairwiseVirus['vfreq_sample_2'])
+    norm = pairwiseVirus.groupby(['t','lineage'])\
+                        .agg(norm=('prob','sum')).reset_index()
+    pairwiseVirus = pairwiseVirus.merge(norm,on=['t','lineage'])
+    pairwiseVirus['prob'] = np.array(pairwiseVirus['prob'])/np.array(pairwiseVirus['norm'])
+    ######
     pairwiseVirus['t_creation_weighted'] = np.array(pairwiseVirus['prob'])\
                                             *np.array(pairwiseVirus['t_creation'])
     lineageVirus = pd.read_sql_query("SELECT t,vstrain_id,lineage \
@@ -928,10 +953,10 @@ if sys.argv[2] == 'MRCA':
     axes[2].margins(x=0)
     axes[3].margins(x=0)
     axes[3].plot(expectedVirusPairwiseMRCA['t'],\
-                list(np.array(expectedVirusPairwiseMRCA['exp_tCreation'])),\
+                list(np.array(expectedVirusPairwiseMRCA['exp_tCreation'])/max(expectedVirusPairwiseMRCA['t'])),\
                     color = 'darkred',label='Virus',linewidth=1)
     axes[3].plot(expectedMicrobePairwiseMRCA['t'],\
-                list(np.array(expectedMicrobePairwiseMRCA['exp_tCreation'])),\
+                list(np.array(expectedMicrobePairwiseMRCA['exp_tCreation'])/max(expectedMicrobePairwiseMRCA['t'])),\
                     color = 'darkblue',label='Host',linewidth=1)
     # axes[3].plot(expectedVirusPairwiseMRCA['t'],expectedVirusPairwiseMRCA['exp_tCreation'],\
     #                 color = 'darkred', label='Virus',linewidth=1)
@@ -947,12 +972,16 @@ if sys.argv[2] == 'MRCA':
     axes[4].set_yticks([])
     axes[4].margins(x=0)
     axes[5].margins(x=0)
+    axes[5].plot(expectedMicrobePairwiseMRCA['t'],\
+                expectedMicrobePairwiseMRCA['t'], color = 'grey',linewidth=1)
     axes[5].plot(expectedVirusPairwiseMRCA['t'],\
                 list(np.array(expectedVirusPairwiseMRCA['t'])-np.array(expectedVirusPairwiseMRCA['exp_tCreation'])),\
                     color = 'darkred',label='Virus',linewidth=1)
     axes[5].plot(expectedMicrobePairwiseMRCA['t'],\
                 list(np.array(expectedMicrobePairwiseMRCA['t'])-np.array(expectedMicrobePairwiseMRCA['exp_tCreation'])),\
                     color = 'darkblue',label='Host',linewidth=1)
+    axes[5].plot(expectedMicrobePairwiseMRCA['t'],\
+                    expectedMicrobePairwiseMRCA['t'], color = 'grey',linewidth=1)
     # axes[3].plot(expectedVirusPairwiseMRCA['t'],expectedVirusPairwiseMRCA['exp_tCreation'],\
     #                 color = 'darkred', label='Virus',linewidth=1)
     axes[5].yaxis.tick_left()
@@ -962,6 +991,55 @@ if sys.argv[2] == 'MRCA':
     axes[5].set_xlabel(xlabel = 'Time t',fontsize=7)
     fig.tight_layout()
     fig.savefig(os.path.join(PLOT_PATH,'expected-pairwise-mrca.png'),dpi=resolve)
+
+if sys.argv[2] == 'traitfitness':
+    bAbunds, _, bSpeciesColorDict, _, _, _, _  = \
+    tree.speciesTreePlot(run_id,'microbe',DBSIM_PATH,DBTREE_PATH,\
+    treepalette,maxticksize,figxy,hratio,babundthreshold)
+    vAbunds, _, vSpeciesColorDict, _, _, _, _ = \
+    tree.speciesTreePlot(run_id,'virus',DBSIM_PATH,DBTREE_PATH,\
+    treepalette,maxticksize,figxy,hratio,vabundthreshold)
+    bAbunds = bAbunds[bAbunds.t <= max(vAbunds.t)]
+    bAbunds = bAbunds[bAbunds['abundance']>0]
+    microbe_stacked = pd.read_sql_query("SELECT t,bstrain_id,abundance FROM babundance \
+                    WHERE run_id = {}".format(run_id), conSim)
+    growthrates = pd.read_sql_query("SELECT bstrain_id, growth_rate \
+                            FROM bgrowthrates", conSim)\
+            .merge(microbe_stacked,on=['bstrain_id'])\
+            .merge(microbe_total,on=['t']).rename(columns={'Microbial Abundance':'btotal'})
+    growthrates['bfreq'] = growthrates['abundance']/growthrates['btotal']
+    expgrowth = growthrates.copy()
+    expgrowth['growth_rate'] = expgrowth['growth_rate']*expgrowth['bfreq']
+    expgrowth = expgrowth.groupby(['t']).agg(exp=('growth_rate','sum')).reset_index()
+fig, ax = plt.subplots(2,sharex=True)
+axes = [ax[0], ax[0].twinx(), ax[1], ax[1].twinx()]
+microbe_stacked = bAbunds[bAbunds.t<=max(virus_total['t'])].pivot(index='t',columns='tree_bstrain_id',values='abundance')
+microbe_stacked.plot.area(ax = axes[0],stacked=True,legend=False, linewidth=0,color=bSpeciesColorDict,sort_columns=True)
+microbe_stacked.plot(stacked=True, ax=axes[0], legend=False, color='white',sort_columns=True,linewidth=.1)
+axes[0].set_ylabel(ylabel ='Host Abundance',labelpad=15,fontsize=7)
+axes[0].set_xlabel(xlabel = 'Time t',fontsize=7)
+axes[0].ticklabel_format(axis = 'y',style='sci',scilimits=(0,0))
+axes[0].xaxis.set_minor_locator(ticker.MultipleLocator(25))
+axes[1].plot(virus_total['t'],virus_total['Viral Abundance'],linewidth=0,color='grey')
+axes[1].fill_between(virus_total['t'],virus_total['Viral Abundance'], color='grey',alpha=0.6)
+axes[0].margins(x=0)
+axes[1].margins(x=0)
+lim = axes[1].get_ylim()
+axes[1].set_ylim(0,lim[1])
+axes[2].fill_between(virus_total['t'],virus_total['Viral Abundance'], color='grey',alpha=0.6)
+lim = axes[2].get_ylim()
+axes[2].set_ylim(0,lim[1])
+axes[2].set_yticklabels([])
+axes[2].set_yticks([])
+axes[2].margins(x=0)
+axes[3].margins(x=0)
+axes[3].plot(expgrowth['t'],expgrowth['exp'],color = 'darkblue',label='Microbe',linewidth=1)
+
+
+
+
+
+
 
 
 if sys.argv[2] == 'viraltemporaladaptation':
@@ -1061,6 +1139,138 @@ if sys.argv[2] == 'viraltemporaladaptation':
     axes[3].legend()
     fig.tight_layout()
     fig.savefig(os.path.join(PLOT_PATH,'viral-temporal-adaptation.png'),dpi=resolve)
+
+
+
+if sys.argv[2] == 'temporaladaptation':
+    comboID = sys.argv[1]
+    # SQLITE path to simulation data
+    DBSIM_PATH = os.path.join(SCRIPT_PATH,'isolates',\
+                                'comboID{}'.format(comboID),\
+                                    'comboID{}.sqlite'.format(comboID))
+    comboID = 3
+    DBSIM_PATH = os.path.join('/Volumes/Yadgah/sylvain-martin-collab/',
+                                '14_MOI3/sweep_db_gathered.sqlite')
+    DBTEMP_PATH = os.path.join('/Volumes/Yadgah/sylvain-martin-collab/14_MOI3',
+                                'temporal-adaptationC{}.sqlite'.format(comboID))  # cluster
+    DBLOC_PATH = os.path.join('/Volumes/Yadgah/sylvain-martin-collab/14_MOI3',
+                                'local-adaptationC{}.sqlite'.format(comboID))  # cluster
+    conSim = sqlite3.connect(DBSIM_PATH)
+    curSim = conSim.cursor()
+    conTemp = sqlite3.connect(DBTEMP_PATH)
+    curTemp = conTemp.cursor()
+    conLoc = sqlite3.connect(DBLOC_PATH)
+    curLoc = conLoc.cursor()
+    tempAdapt = pd.read_sql_query("SELECT time_delay, TA, run_id\
+        FROM temporal_adaptation", conTemp)
+    meanTA = tempAdapt.groupby(['time_delay'])\
+        .agg(mean=('TA', 'mean'),std=('TA','std'),n=('run_id','size')).reset_index()\
+        .dropna()
+
+    # localAdapt = pd.read_sql_query("SELECT brun_id, t, vstrain_id, vfitness, run_id \
+    #                 FROM local_adaptation", conLoc)
+    intraFitness = pd.DataFrame({'t': [], 'run_id': [], 'vfitness': [], })
+    interFitness = pd.DataFrame({'t': [], 'run_id': [], 'interFitness': [], })
+    for (runID,) in curLoc.execute("SELECT DISTINCT run_id FROM local_adaptation"):
+        # print(runID)
+        sumFitness = pd.read_sql_query("SELECT t, vfitness, run_id \
+                    FROM local_adaptation WHERE run_id = {0} AND brun_id = {0}".format(runID), conLoc)
+        sumFitness = sumFitness.groupby(['t','run_id']).agg(vfitness=('vfitness','sum')).reset_index()
+        intraFitness = pd.concat([intraFitness, sumFitness]).reset_index(drop=True)
+        sumFitness = pd.read_sql_query("SELECT t, vfitness, run_id \
+                    FROM local_adaptation WHERE run_id = {0} AND brun_id != {0}".format(runID), conLoc)
+        sumFitness = sumFitness.groupby(['t', 'run_id']).agg(interFitness=('vfitness', 'sum')).reset_index()
+        interFitness = pd.concat([interFitness, sumFitness]).reset_index(drop=True)
+
+    
+    reps = len(pd.read_sql_query("SELECT run_id \
+                    FROM runs WHERE combo_id = {0}".format(comboID), conLoc)['run_id'])
+    meanLA = intraFitness.merge(interFitness,on=['t','run_id'])
+    meanLA['LA'] = meanLA['vfitness'] - 1/(reps-1)*meanLA['interFitness']
+    meanLA = meanLA.groupby(['t'])\
+                    .agg(mean=('LA', 'mean'),std=('LA','std'),n=('LA','size')).reset_index()
+    nThresh = 15
+    meanLAthresh = meanLA[meanLA.n >= nThresh]
+    meanTAthresh = meanTA[meanTA.n >= nThresh]
+    ###
+    comboID = 27
+    DBTEMP_PATH = os.path.join('/Volumes/Yadgah/sylvain-martin-collab/12_MOI3/',
+                                'temporal-adaptationC{}.sqlite'.format(comboID))  # cluster
+    DBLOC_PATH = os.path.join('/Volumes/Yadgah/sylvain-martin-collab/12_MOI3',
+                                'local-adaptationC{}.sqlite'.format(comboID))  # cluster
+    conTemp = sqlite3.connect(DBTEMP_PATH)
+    curTemp = conTemp.cursor()
+    conLoc = sqlite3.connect(DBLOC_PATH)
+    curLoc = conLoc.cursor()
+    tempAdapt = pd.read_sql_query("SELECT time_delay, TA, run_id\
+        FROM temporal_adaptation", conTemp)
+    meanTA2 = tempAdapt.groupby(['time_delay'])\
+        .agg(mean=('TA', 'mean'),std=('TA','std'),n=('run_id','size')).reset_index()\
+        .dropna()
+    intraFitness = pd.DataFrame({'t': [], 'run_id': [], 'vfitness': [], })
+    interFitness = pd.DataFrame({'t': [], 'run_id': [], 'interFitness': [], })
+    for (runID,) in curLoc.execute("SELECT DISTINCT run_id FROM local_adaptation"):
+        # print(runID)
+        sumFitness = pd.read_sql_query("SELECT t, vfitness, run_id \
+                    FROM local_adaptation WHERE run_id = {0} AND brun_id = {0}".format(runID), conLoc)
+        sumFitness = sumFitness.groupby(['t','run_id']).agg(vfitness=('vfitness','sum')).reset_index()
+        intraFitness = pd.concat([intraFitness, sumFitness]).reset_index(drop=True)
+        sumFitness = pd.read_sql_query("SELECT t, vfitness, run_id \
+                    FROM local_adaptation WHERE run_id = {0} AND brun_id != {0}".format(runID), conLoc)
+        sumFitness = sumFitness.groupby(['t', 'run_id']).agg(interFitness=('vfitness', 'sum')).reset_index()
+        interFitness = pd.concat([interFitness, sumFitness]).reset_index(drop=True)
+
+    reps = len(pd.read_sql_query("SELECT run_id \
+                    FROM runs WHERE combo_id = {0}".format(comboID), conLoc)['run_id'])
+    meanLA2 = intraFitness.merge(interFitness,on=['t','run_id'])
+    meanLA2['LA'] = meanLA2['vfitness'] - 1/(reps-1)*meanLA2['interFitness']
+    meanLA2 = meanLA2.groupby(['t'])\
+                    .agg(mean=('LA', 'mean'),std=('LA','std'),n=('LA','size')).reset_index()
+    nThresh = 15
+    meanLAthresh2 = meanLA2[meanLA2.n >= nThresh]
+    meanTAthresh2 = meanTA2[meanTA2.n >= nThresh]
+    
+    # fig, ax = plt.subplots(1, 2,figsize=(20,8))
+    # axes = [ax[0], ax[1]]
+    fig = plt.figure(figsize=(20, 8))
+    gs = fig.add_gridspec(1, 2, hspace=0, wspace=.35)
+    (ax1, ax2) = gs.subplots()
+    axes = [ax1, ax2]
+    c2 = 'mediumblue'
+    c1 = 'darkorange'
+    a = 0.3
+    axes[0].fill_between(meanTAthresh['time_delay'], meanTAthresh['mean']-meanTAthresh['std'], 
+                        meanTAthresh['mean'] + meanTAthresh['std'], color=c1, alpha=a)
+    axes[0].plot(meanTAthresh['time_delay'],meanTAthresh['mean'],
+                 linewidth=1.5, color=c1, label=r'$\sigma = 0$')
+    axes[0].fill_between(meanTAthresh2['time_delay'], meanTAthresh2['mean']-meanTAthresh2['std'],
+                         meanTAthresh2['mean'] + meanTAthresh2['std'], color=c2, alpha=a)
+    axes[0].plot(meanTAthresh2['time_delay'], meanTAthresh2['mean'], 
+                 linewidth=1.5, color=c2, label = r'$\sigma = 3$')
+    axes[1].fill_between(meanLAthresh['t'], meanLAthresh['mean']-meanLAthresh['std'],
+                        meanLAthresh['mean'] + meanLAthresh['std'], color=c1, alpha=a)
+    axes[1].plot(meanLAthresh['t'], meanLAthresh['mean'],
+                 linewidth=1.5, color=c1, label = r'$\sigma = 0$')
+    axes[1].fill_between(meanLAthresh2['t'], meanLAthresh2['mean']-meanLAthresh2['std'],
+                         meanLAthresh2['mean'] + meanLAthresh2['std'], color=c2, alpha=a)
+    axes[1].plot(meanLAthresh2['t'], meanLAthresh2['mean'],
+                 linewidth=1.5, color=c2, label= r'$\sigma = 3$')
+    axes[0].xaxis.set_minor_locator(ticker.MultipleLocator(50))
+    axes[1].xaxis.set_minor_locator(ticker.MultipleLocator(50))
+    axes[0].set_ylabel(ylabel ='Viral Temporal Adaptation (TA)',labelpad=15,fontsize=15)
+    axes[0].set_xlabel(xlabel = 'Time t',fontsize=15,labelpad=15)
+    axes[1].set_ylabel(ylabel ='Viral Local Adaptation (LA)',labelpad=15,fontsize=15)
+    axes[1].set_xlabel(xlabel = 'Time t',fontsize=15,labelpad=15)
+    axes[0].tick_params(axis='x', labelsize=15)
+    axes[0].tick_params(axis='y', labelsize=15)
+    axes[1].tick_params(axis='x', labelsize=15)
+    axes[1].tick_params(axis='y', labelsize=15)
+    axes[0].legend(loc='upper right', fontsize=15)
+    axes[1].legend(loc='upper right',fontsize=15)
+    # fig.tight_layout(pad=5)
+    plt.show()
+   
+
 
 
 print('Complete!')

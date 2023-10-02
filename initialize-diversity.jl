@@ -18,8 +18,8 @@ rngDiv = MersenneTwister(9876543456)
 
 ## Define Paths ##
 SCRIPT_PATH = abspath(dirname(PROGRAM_FILE))
-include(joinpath(SCRIPT_PATH,"simulation","src","fitness.jl"))
-dbOutputPath = joinpath(SCRIPT_PATH,"initial-conditions.sqlite") # cluster
+include(joinpath(SCRIPT_PATH, "simulation", "src", "fitness.jl"))
+dbOutputPath = joinpath(SCRIPT_PATH, "initial-conditions.sqlite") # cluster
 ##
 if isfile(dbOutputPath)
     # error("initial-conditions.sqlite already exists; delete first")
@@ -40,9 +40,11 @@ function make_sweep_params_script(SCRIPT_PATH)
 
     rng_seed = UInt64(1) # this will be generated randomly upon calling generate-sweep.jl
     enable_output = true
-## These are parameters that we initialize the diversity with, but also important for actual dynamics
-    directional = true
-    evofunction = 1
+    ## These are parameters that we initialize the diversity with, but also important for actual dynamics
+    random_initial_alleles = false
+    directional = false
+    evofunction = 2
+    evofunctionScale = collect(Float64(1/100):(5-1/100)/10:Float64(5))
     n_bstrains = UInt64(8)
     n_vstrains = UInt64(1)
     n_hosts_per_bstrain = UInt64(100)
@@ -52,47 +54,48 @@ function make_sweep_params_script(SCRIPT_PATH)
     max_fitness = Float64(1)
     initial_locus_allele = Float64(25) # this can be whatever value in this script
     center_allele = Float64(0)
-    allelic_change = Float64(1)
-    max_allele = max_allele = [Float64(30), Float64(35), Float64(45), Float64(60), Float64(80), Float64(105), Float64(135), Float64(170)]
+    max_allele = Float64(1)
+    numAlleles = 100
+    allelic_change = 2*max_allele/numAlleles
 
-    minSelectedAllele = -30 # this should be greater than center_allele - max_allele
-    maxSelectedAllele = 30# this should be less than max_allele
-    bTotal = floor(100*n_bstrains)
+    minSelectedAllele = -1 # this should be greater than center_allele - max_allele
+    maxSelectedAllele = 1# this should be less than max_allele
+    bTotal = floor(100 * n_bstrains)
     vTotal = floor(2400)
     alleles = collect(minSelectedAllele:allelic_change:maxSelectedAllele)
     bstrainIDs = collect(1:n_bstrains)
     vstrainIDs = collect(1:n_vstrains)
-    bfreqs = repeat([1/n_bstrains],n_bstrains)
-    vfreqs = repeat([1/n_vstrains],n_vstrains)
+    bfreqs = repeat([1 / n_bstrains], n_bstrains)
+    vfreqs = repeat([1 / n_vstrains], n_vstrains)
     pspacers = collect(1:n_protospacers)
-    singlematches = sample(rngDiv,pspacers,n_bstrains-1;replace=false)
+    singlematches = sample(rngDiv, pspacers, n_bstrains - 1; replace=false)
     spacers = [0 singlematches...]
     println("btotal is $(bTotal)")
     println("freq is $(bfreqs[1]*bTotal)")
-    babundances = map(x->floor(x*bTotal),bfreqs)
-    vabundances = map(x->floor(x*vTotal),vfreqs)
-    blocusAlleles = [center_allele, sample(rngDiv,alleles,n_bstrains-1;replace=false)...] # this ensures that source of fuel has high growth rate
-    for maxAllele in [max_allele...]
-        println("For max allele $(maxAllele), growth rates are $(map(x->fitness(x,center_allele,maxAllele,max_fitness,evofunction),blocusAlleles))")
-    end
+    babundances = map(x -> floor(x * bTotal), bfreqs)
+    vabundances = map(x -> floor(x * vTotal), vfreqs)
+    blocusAlleles = [center_allele, sample(rngDiv, alleles, n_bstrains - 1; replace=false)...] # this ensures that source of fuel has high growth rate
+    # for maxAllele in [max_allele...]
+    #     println("For max allele $(maxAllele), growth rates are $(map(x->fitness(x,center_allele,maxAllele,max_fitness,evofunction),blocusAlleles))")
+    # end
     # println("babundances: $(babundances)")
     # println("spacers: $(spacers)")
     # println("blocusAlleles: $(blocusAlleles)")
     execute(dbOutput, "BEGIN TRANSACTION")
     for id in 1:lastindex(bstrainIDs)
-        execute(dbOutput, "INSERT INTO babundance VALUES (?,?)",(Int64(bstrainIDs[id]),babundances[id]))
-        execute(dbOutput, "INSERT INTO bspacers VALUES (?,?)",(Int64(bstrainIDs[id]),Int64(spacers[id])))
-        execute(dbOutput, "INSERT INTO blocusalleles VALUES (?,?)",(Int64(bstrainIDs[id]),blocusAlleles[id]))
+        execute(dbOutput, "INSERT INTO babundance VALUES (?,?)", (Int64(bstrainIDs[id]), babundances[id]))
+        execute(dbOutput, "INSERT INTO bspacers VALUES (?,?)", (Int64(bstrainIDs[id]), Int64(spacers[id])))
+        execute(dbOutput, "INSERT INTO blocusalleles VALUES (?,?)", (Int64(bstrainIDs[id]), blocusAlleles[id]))
     end
     for id in 1:lastindex(vstrainIDs)
-        execute(dbOutput, "INSERT INTO vabundance VALUES (?,?)",(Int64(vstrainIDs[id]),vabundances[id]))
+        execute(dbOutput, "INSERT INTO vabundance VALUES (?,?)", (Int64(vstrainIDs[id]), vabundances[id]))
         for spacerID in pspacers
-            execute(dbOutput, "INSERT INTO vpspacers VALUES (?,?)",(Int64(vstrainIDs[id]),Int64(spacerID)))
+            execute(dbOutput, "INSERT INTO vpspacers VALUES (?,?)", (Int64(vstrainIDs[id]), Int64(spacerID)))
         end
     end
     execute(dbOutput, "COMMIT")
 
-## Thease are parameters for actual dynamics
+    ## Thease are parameters for actual dynamics
     crispr_failure_prob = Float64(0)
     spacer_acquisition_prob = Float64(1.9e-05)
     microbe_mutation_prob = Float64(0)
@@ -103,12 +106,51 @@ function make_sweep_params_script(SCRIPT_PATH)
     viral_mutation_rate = Float64(1.04e-06)
     microbe_death_rate = Float64(0.1)
     microbe_immigration_rate = Float64(0)
-##
+
+    params = ParamSweep(;
+        t_final=t_final,
+        t_output=t_output,
+        rng_seed=rng_seed,
+        enable_output=enable_output,
+        random_initial_alleles=random_initial_alleles,
+        directional=directional,
+        evofunction=evofunction,
+        evofunctionScale=evofunctionScale,
+        initial_locus_allele=initial_locus_allele,
+        center_allele=center_allele,
+        allelic_change=allelic_change,
+        max_allele=max_allele,
+        max_fitness=max_fitness,
+        n_bstrains=n_bstrains,
+        n_hosts_per_bstrain=n_hosts_per_bstrain,
+        n_vstrains=n_vstrains,
+        n_particles_per_vstrain=n_particles_per_vstrain,
+        n_protospacers=n_protospacers,
+        n_spacers_max=n_spacers_max,
+        crispr_failure_prob=crispr_failure_prob,
+        spacer_acquisition_prob=spacer_acquisition_prob,
+        microbe_mutation_prob=microbe_mutation_prob,
+        microbe_carrying_capacity=microbe_carrying_capacity,
+        viral_burst_size=viral_burst_size,
+        adsorption_rate=adsorption_rate,
+        viral_decay_rate=viral_decay_rate,
+        viral_mutation_rate=viral_mutation_rate,
+        microbe_death_rate=microbe_death_rate,
+        microbe_immigration_rate=microbe_immigration_rate
+    )
+    validate(params)
+    params_json = pretty_json(params)
+    open(joinpath(SCRIPT_PATH, "sweep-parameters.json"), "w") do f
+        println(f, params_json)
+    end
+    ##
     numParams = []
     push!(numParams, length(initial_locus_allele))
     push!(numParams, length(center_allele))
     push!(numParams, length(allelic_change))
     push!(numParams, length(max_allele))
+    push!(numParams, length(evofunction))
+    push!(numParams, length(evofunctionScale))
     push!(numParams, length(max_fitness))
     push!(numParams, length(n_bstrains))
     push!(numParams, length(n_vstrains))
@@ -126,44 +168,8 @@ function make_sweep_params_script(SCRIPT_PATH)
     push!(numParams, length(n_protospacers))
     push!(numParams, length(n_particles_per_vstrain))
     push!(numParams, length(n_hosts_per_bstrain))
-    push!(numParams, length(rng_seed))
     push!(numParams, length(t_output))
     push!(numParams, length(t_final))
-
-    params = ParamSweep(;
-        t_final = t_final,
-        t_output = t_output,
-        rng_seed = rng_seed,
-        enable_output = enable_output,
-        directional = directional,
-        evofunction =  evofunction,
-        initial_locus_allele = initial_locus_allele,
-        center_allele = center_allele,
-        allelic_change = allelic_change,
-        max_allele = max_allele,
-        max_fitness = max_fitness,
-        n_bstrains = n_bstrains,
-        n_hosts_per_bstrain = n_hosts_per_bstrain,
-        n_vstrains = n_vstrains,
-        n_particles_per_vstrain = n_particles_per_vstrain,
-        n_protospacers = n_protospacers,
-        n_spacers_max = n_spacers_max,
-        crispr_failure_prob = crispr_failure_prob,
-        spacer_acquisition_prob = spacer_acquisition_prob,
-        microbe_mutation_prob = microbe_mutation_prob,
-        microbe_carrying_capacity = microbe_carrying_capacity,
-        viral_burst_size = viral_burst_size,
-        adsorption_rate = adsorption_rate,
-        viral_decay_rate = viral_decay_rate,
-        viral_mutation_rate = viral_mutation_rate,
-        microbe_death_rate = microbe_death_rate,
-        microbe_immigration_rate = microbe_immigration_rate,
-    )
-    validate(params)
-    params_json = pretty_json(params)
-    open(joinpath(SCRIPT_PATH, "sweep-parameters.json"), "w") do f
-        println(f, params_json)
-    end
     @info "This sweep has $(prod(numParams)) parameter combinations.
     Multiply this value with the number of replicates intended to evaluate numbers of cores necessary."
 end
@@ -177,85 +183,91 @@ end
 
 @with_kw mutable struct ParamSweep
     "Simulation end time"
-    t_final::Union{Float64, Array{Float64,1}, Nothing}
+    t_final::Union{Float64,Array{Float64,1},Nothing}
 
     "Time between output events"
-    t_output::Union{Float64, Array{Float64,1}, Nothing}
+    t_output::Union{Float64,Array{Float64,1},Nothing}
 
     "Seed for random number generator"
-    rng_seed::Union{UInt64, Array{UInt64,1}, Nothing}
+    rng_seed::Union{UInt64,Array{UInt64,1},Nothing}
 
     "Enable output?"
-    enable_output::Union{Bool, Nothing}
+    enable_output::Union{Bool,Nothing}
+
+    "Random initial host locus alleles?"
+    random_initial_alleles::Union{Bool,Nothing}
 
     "Directional growth mutations?"
-    directional::Union{Bool, Nothing}
+    directional::Union{Bool,Nothing}
 
     "The is the genotype to phenotype map for microbial demographic trait"
-    evofunction::Union{UInt64, Nothing}
+    evofunction::Union{UInt64,Nothing}
+
+    "This is an arbitrary scale factor used for the genotype to phenotype map: evofunction"
+    evofunctionScale::Union{Float64,Array{Float64,1},Nothing}
 
     "This sets the initial allele value"
-    initial_locus_allele::Union{Float64, Array{Float64,1}, Nothing}
+    initial_locus_allele::Union{Float64,Array{Float64,1},Nothing}
 
     "This sets the middle allele value"
-    center_allele::Union{Float64, Array{Float64,1}, Nothing}
+    center_allele::Union{Float64,Array{Float64,1},Nothing}
 
     "The amount allele value changes upon directional mutation [epsilon]"
-    allelic_change::Union{Float64, Array{Float64,1}, Nothing}
+    allelic_change::Union{Float64,Array{Float64,1},Nothing}
 
     "This sets the upper and lower bounds of allele values"
-    max_allele::Union{Float64, Array{Float64,1}, Nothing}
+    max_allele::Union{Float64,Array{Float64,1},Nothing}
 
     "This sets the maximum instrinsic fitness of microbe"
-    max_fitness::Union{Float64, Array{Float64,1}, Nothing}
+    max_fitness::Union{Float64,Array{Float64,1},Nothing}
 
     "Number of initial bacterial strains"
-    n_bstrains::Union{UInt64, Array{UInt64,1}, Nothing}
+    n_bstrains::Union{UInt64,Array{UInt64,1},Nothing}
 
     "Number of initial hosts per bacterial strain"
-    n_hosts_per_bstrain::Union{UInt64, Array{UInt64,1}, Nothing}
+    n_hosts_per_bstrain::Union{UInt64,Array{UInt64,1},Nothing}
 
     "Number of initial virus strains"
-    n_vstrains::Union{UInt64, Array{UInt64,1}, Nothing}
+    n_vstrains::Union{UInt64,Array{UInt64,1},Nothing}
 
     "Number of initial particles per bacterial strain"
-    n_particles_per_vstrain::Union{UInt64, Array{UInt64,1}, Nothing}
+    n_particles_per_vstrain::Union{UInt64,Array{UInt64,1},Nothing}
 
     "Number of initial protospacers per virus strain"
-    n_protospacers::Union{UInt64, Array{UInt64,1}, Nothing}
+    n_protospacers::Union{UInt64,Array{UInt64,1},Nothing}
 
     "Maximum number of spacers in a bacterial strain"
-    n_spacers_max::Union{UInt64, Array{UInt64,1}, Nothing}
+    n_spacers_max::Union{UInt64,Array{UInt64,1},Nothing}
 
     "CRIPSR failure probability [p]"
-    crispr_failure_prob::Union{Float64, Array{Float64,1}, Nothing}
+    crispr_failure_prob::Union{Float64,Array{Float64,1},Nothing}
 
     "New spacer acquisition probability [q]"
-    spacer_acquisition_prob::Union{Float64, Array{Float64,1}, Nothing}
+    spacer_acquisition_prob::Union{Float64,Array{Float64,1},Nothing}
 
     "Microbial mutation probability [rho]"
-    microbe_mutation_prob::Union{Float64, Array{Float64,1}, Nothing}
+    microbe_mutation_prob::Union{Float64,Array{Float64,1},Nothing}
 
     "Carrying capacity (1/mL) = [K]"
-    microbe_carrying_capacity::Union{Float64, Array{Float64,1}, Nothing}
+    microbe_carrying_capacity::Union{Float64,Array{Float64,1},Nothing}
 
     "Burst size [beta]"
-    viral_burst_size::Union{UInt64, Array{UInt64,1}, Nothing}
+    viral_burst_size::Union{UInt64,Array{UInt64,1},Nothing}
 
     "Adsorption rate [phi]"
-    adsorption_rate::Union{Float64, Array{Float64,1}, Nothing}
+    adsorption_rate::Union{Float64,Array{Float64,1},Nothing}
 
     "Viral decay rate [m]"
-    viral_decay_rate::Union{Float64, Array{Float64,1}, Nothing}
+    viral_decay_rate::Union{Float64,Array{Float64,1},Nothing}
 
     "Mutation rate [mu]"
-    viral_mutation_rate::Union{Float64, Array{Float64,1}, Nothing}
+    viral_mutation_rate::Union{Float64,Array{Float64,1},Nothing}
 
     "Constant death rate (not in Childs model) [d]"
-    microbe_death_rate::Union{Float64, Array{Float64,1}, Nothing}
+    microbe_death_rate::Union{Float64,Array{Float64,1},Nothing}
 
     "Constant immigration rate (not in Childs model) [eta]"
-    microbe_immigration_rate::Union{Float64, Array{Float64,1}, Nothing}
+    microbe_immigration_rate::Union{Float64,Array{Float64,1},Nothing}
 end
 
 
@@ -263,7 +275,10 @@ function validate(p::ParamSweep)
     @assert p.t_final !== nothing
     @assert p.t_output !== nothing
 
+    @assert p.directional !== nothing
+    @assert p.random_initial_alleles !== nothing
     @assert p.evofunction !== nothing
+    @assert p.evofunctionScale !== nothing
     @assert p.initial_locus_allele !== nothing
     @assert p.center_allele !== nothing
     @assert p.allelic_change !== nothing

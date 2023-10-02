@@ -1,6 +1,6 @@
 #!/usr/bin/env julia
 
-println("(Annoying Julia compilation delay...)")
+println("(Julia compilation delay...)")
 
 using SQLite
 using DataFrames
@@ -13,6 +13,7 @@ SCRIPT_PATH = abspath(dirname(PROGRAM_FILE))
 
 dbSimPath = joinpath(SCRIPT_PATH,"..","..","simulation","sweep_db_gathered.sqlite") # cluster
 #dbSimPath = joinpath("/Volumes/Yadgah/sweep_db_gathered.sqlite") # local
+# dbSimPath = joinpath("/Volumes/Yadgah/sylvain-martin-collab/8_MOI3/sweep_db_gathered.sqlite")
 dbSimInfoPath = joinpath(SCRIPT_PATH,"..","..","simulation","sweep_db.sqlite") # cluster
 #dbSimInfoPath = joinpath("/Volumes/Yadgah/sweep_db.sqlite") # local
 dbOutputPath = joinpath("extinctions_output.sqlite") # cluster
@@ -45,15 +46,15 @@ println("Processing extinction occurrences of run $(run_id)")
 function extinction()
     microbesDF = DataFrame(execute(dbTemp, "SELECT t,microbial_abundance FROM summary ORDER BY t"))
     virusesDF = DataFrame(execute(dbTemp, "SELECT t,viral_abundance FROM summary ORDER by t"))
-    microbesDF = microbesDF[(microbesDF.t .!=0),:]
-    virusesDF = virusesDF[(virusesDF.t .!=0),:]
+    microbesDF = microbesDF[(microbesDF.t.!=0), :]
+    virusesDF = virusesDF[(virusesDF.t.!=0), :]
     microbeExt = 0
     virusExt = 0
     simEndTime = 0
 
-    if issubset(0,microbesDF[:,:microbial_abundance])
+    if issubset(0, microbesDF[:, :microbial_abundance])
         microbeExt = 1
-        mSimEndTime = maximum(microbesDF[(microbesDF.microbial_abundance .!=0),:].t) + 1
+        mSimEndTime = maximum(microbesDF[(microbesDF.microbial_abundance.!=0), :].t) + 1
         println(microbeExt)
     else
         microbeExt = 0
@@ -61,13 +62,13 @@ function extinction()
         println(microbeExt)
     end
 
-    if issubset(0,virusesDF[:,:viral_abundance])
-        if issubset(0,microbesDF[:,:microbial_abundance])
+    if issubset(0, virusesDF[:, :viral_abundance])
+        if issubset(0, microbesDF[:, :microbial_abundance])
             virusExt = 0
             vSimEndTime = maximum(virusesDF.t)
         else
             virusExt = 1
-            vSimEndTime = maximum(virusesDF[(virusesDF.viral_abundance .!=0),:].t) + 1
+            vSimEndTime = maximum(virusesDF[(virusesDF.viral_abundance.!=0), :].t) + 1
         end
         println(virusExt)
     else
@@ -77,9 +78,33 @@ function extinction()
     end
 
     execute(dbOutput, "BEGIN TRANSACTION")
-    execute(dbOutput, "INSERT INTO extinction_occurrence VALUES (?,?)", (microbeExt,virusExt))
+    execute(dbOutput, "INSERT INTO extinction_occurrence VALUES (?,?)", (microbeExt, virusExt))
     execute(dbOutput, "INSERT INTO simulation_end_time VALUES ($(mSimEndTime),$(vSimEndTime))")
     execute(dbOutput, "COMMIT")
+    
+    dbSim = SQLite.DB(dbSimPath)
+    tableNames = [table for (table,) in 
+                execute(dbSim,"SELECT name FROM sqlite_master WHERE type='table' 
+                AND name in ('bextinctions', 'vextinctions');")]
+    if length(tableNames) > 0
+        execute(dbOutput, "ATTACH DATABASE '$(dbSimPath)' as dbSim")
+        for table in tableNames
+            if table == "vextinctions"
+                strainID = "vstrain_id"
+                execute(dbOutput, "CREATE TABLE $(table) ($(strainID) INTEGER, t_extinction REAL)")
+                execute(dbOutput, "BEGIN TRANSACTION")
+                execute(dbOutput, "INSERT INTO $(table)($(strainID), t_extinction) SELECT $(strainID), t_extinction FROM dbSim.$(table) WHERE run_id = $(run_id);")
+                execute(dbOutput, "COMMIT")
+            end
+            if table == "bextinctions"
+                strainID = "bstrain_id"
+                execute(dbOutput, "CREATE TABLE $(table) ($(strainID) INTEGER, t_extinction REAL)")
+                execute(dbOutput, "BEGIN TRANSACTION")
+                execute(dbOutput, "INSERT INTO $(table)($(strainID), t_extinction) SELECT $(strainID), t_extinction FROM dbSim.$(table) WHERE run_id = $(run_id);")
+                execute(dbOutput, "COMMIT")
+            end
+        end
+    end
 end
 
 extinction()

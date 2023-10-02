@@ -57,7 +57,7 @@ const mem_per_cpu = 2000 # in MB 100MB = 1 GB
 
 db = SQLite.DB(joinpath(SCRIPT_PATH,"sweep_db.sqlite")) # the function of this database
 # is to log run and job ids of individual simulation directory names
-json_str = read(joinpath(SCRIPT_PATH,"..","sweep-parameters.json"), String)
+json_str = read(joinpath(SCRIPT_PATH,"..","..","sweep-parameters.json"), String)
 paramStringTrunc = JSON.parse(json_str)
 # Deleting any key will designate the parameter as a base (unchanging parameter)
 # with the exception of the seed, which is generated for every individual replicate
@@ -104,7 +104,7 @@ function generate_runs(db::DB) # This function generates the directories
     # System random device used to generate seeds
     seed_rng = RandomDevice()
 
-    json_str = read(joinpath(SCRIPT_PATH,"..","sweep-parameters.json"), String)
+    json_str = read(joinpath(SCRIPT_PATH,"..","..","sweep-parameters.json"), String)
     paramString = JSON.parse(json_str)
     paramSymb = Dict((Symbol(k), v) for (k, v) in paramString)
     base_params = init_params(paramSymb)

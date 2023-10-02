@@ -1,7 +1,7 @@
 ### OUTPUT FUNCTIONS ###
 
 function initialize_database()
-    print(cd(pwd))
+    # print(cd(pwd))
     if isfile("output.sqlite")
         error("output.sqlite already exists; delete first")
     end
@@ -25,6 +25,12 @@ function initialize_database()
         )
     """)
     execute(db, """
+        CREATE TABLE bextinctions (
+            bstrain_id INTEGER,
+            t_extinction REAL
+        )
+    """)
+    execute(db, """
         CREATE TABLE bspacers (
             bstrain_id INTEGER,
             spacer_id INTEGER
@@ -43,13 +49,18 @@ function initialize_database()
             abundance INTEGER
         )
     """)
-
     execute(db, """
         CREATE TABLE vstrains (
             t_creation REAL,
             vstrain_id INTEGER,
             parent_vstrain_id INTEGER,
             infected_bstrain_id INTEGER
+        )
+    """)
+    execute(db, """
+        CREATE TABLE vextinctions (
+            vstrain_id INTEGER,
+            t_extinction REAL
         )
     """)
     execute(db, """
@@ -110,6 +121,13 @@ function write_strain(sim, strains_table_name, id, parent_id, other_id)
     )
 end
 
+function write_extinction(sim, strains_table_name, id)
+    execute(sim.db,
+        "INSERT INTO $strains_table_name VALUES (?,?)",
+        [id, sim.t]
+    )
+end
+
 function write_spacers(sim, spacers_table_name, id, spacers)
     @debug "write_spacers" id spacers
     stmt = Stmt(sim.db, "INSERT INTO $spacers_table_name VALUES (?,?)")
@@ -131,6 +149,9 @@ function write_abundances(sim, table_name, ids, abundance)
     stmt = Stmt(sim.db, "INSERT INTO $table_name VALUES (?,?,?)")
     for i = 1:lastindex(ids)
         @debug "lastindex(ids)" lastindex(ids)
+        if ids[i] == 1 && abundance[i] == 0
+            continue
+        end
         execute(stmt, [t, ids[i], abundance[i]])
     end
 end

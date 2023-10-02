@@ -34,7 +34,7 @@ function main()
         execute(dbOutput, "ATTACH DATABASE '$(dbSimPath)' as dbSim")
                 println("Database Attached")
 
-        for table_name in ["babundance","bspacers","bgrowthrates","bstrains","summary","vabundance","vpspacers","vstrains"]
+        for table_name in ["babundance","bspacers","bgrowthrates","bstrains","summary","vabundance","vpspacers","vstrains","bextinctions","vextinctions"]
             println("Table Name: $(table_name)")
             tableCols = ["$(table_info.name)" for table_info in execute(dbSim,"PRAGMA table_info($(table_name))")]
             tableColsType = ["$(table_info.name) $(table_info.type)" for table_info in execute(dbSim,"PRAGMA table_info($(table_name))")]
@@ -55,7 +55,7 @@ function main()
         tableNamesTypes = ["$(table_info.name) $(table_info.type)" for table_info in execute(dbSim,"PRAGMA table_info(param_combos)")]
         tableNamesTypes = join(tableNamesTypes,", ")
         println("...creating tables...")
-        execute(dbOutput, "CREATE TABLE runs (run_id INTEGER, combo_id INTEGER, replicate INTEGER)")
+        execute(dbOutput, "CREATE TABLE runs (run_id INTEGER, combo_id INTEGER, replicate INTEGER, rng_seed INTEGER)")
         execute(dbOutput, "CREATE TABLE param_combos ($(tableNamesTypes...))")
         println("Tables Created")
         tableNames = ["$(table_info.name)" for table_info in execute(dbSim,"PRAGMA table_info(param_combos)")]
