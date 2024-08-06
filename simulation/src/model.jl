@@ -42,14 +42,19 @@ while sim.t < p.t_final
     t_next_output = min(p.t_final, t_next_output + p.t_output)
 
     beginTime = sim.t
+
     while sim.t < t_next_output # This continues until sum of event times meet sampling time
         do_next_event!(sim, t_next_output)
-        # println("oh")
     end
     endTime = sim.t
 
     @info "Completed period: $(beginTime) to $(endTime)"
-
+    if p.truncate_output == true
+        if state.vstrains.total_abundance == 0
+            println("Viruses extinguished! Output truncated.")
+            break
+        end
+    end
     @assert sim.t >= t_next_output
 end
 execute(db, "COMMIT")
@@ -80,11 +85,11 @@ end
 function do_next_event!(sim::Simulation, t_max::Float64)
     p = sim.params
     s = sim.state
-    db = sim.db
 
     @assert length(sim.event_rates) == length(EVENTS)
     R = sum(sim.event_rates)
-
+    # println("EVENTS: $(EVENTS)")
+    # println("EVENT RATES $(sim.event_rates)")
     # Draw next event time using total rate
     t_next = sim.t + randexp(sim.rng) / R
 
@@ -213,7 +218,11 @@ function get_rate_microbial_growth(sim::Simulation)
 
     d = p.microbe_death_rate
     K = C * R_vec .* ((R_vec .- d) .^ (-1))
-
+    # println("N_vec: $(N_vec)")
+    # println("R_vec: $(R_vec)")
+    # println("N: $(N)")
+    # println("K: $(K)")
+    # println("rates is $((R_vec .* N_vec) .* (1 .- (K .^ -1) * N))")
     max(0, sum((R_vec .* N_vec) .* (1 .- (K .^ -1) * N)))
 end
 
@@ -225,16 +234,76 @@ function do_event_microbial_growth!(sim::Simulation, t::Float64)
 
     N_vec = s.bstrains.abundance
     R_vec = s.bstrains.growthrates
-    N = s.bstrains.total_abundance
 
     # Choose a strain proportional to abundance
     # strain_index = sample_linear_integer_weights(rng, N_vec, N)
-    strain_index = sample(rng,Weights(N_vec.*R_vec))
-    # Update abundance and total abundance
-     s.bstrains.abundance[strain_index] += 1
-    s.bstrains.total_abundance += 1
+    iB = sample(rng,Weights(N_vec.*R_vec))
+
+    should_mutate = false
+    if p.evofunctionScale > 0
+        if p.microbe_mutation_prob_per_replication > 0
+            if rand(rng) < p.microbe_mutation_prob_per_replication
+                should_mutate = true
+            end
+        end
+    end
+    if should_mutate
+        old_spacers = s.bstrains.spacers[iB]
+        allele = mutate_microbe_fitness(sim, iB)
+        mutated_strain_index = check_microbial_strain_overlap(sim, iB, allele, old_spacers)
+        if mutated_strain_index == nothing
+            newgrowthrate = fitness(allele, p.center_allele, p.max_allele,
+                p.evofunctionScale, p.max_fitness, p.microbe_death_rate, p.evofunction)
+            id = s.bstrains.next_id
+            s.bstrains.next_id += 1
+            push!(s.bstrains.ids, id) #Adds new strain identity
+            push!(s.bstrains.abundance, 1) #Adds abundance of one to new strain identity
+            push!(s.bstrains.spacers, old_spacers)
+            push!(s.bstrains.growthalleles, allele)
+            push!(s.bstrains.growthrates, newgrowthrate)
+            s.bstrains.total_abundance += 1
+            # println(s.bstrains.growthrates)
+            if p.enable_output
+                write_strain(sim, "bstrains", id, s.bstrains.ids[iB], nothing)
+                write_spacers(sim, "bspacers", id, old_spacers)
+                write_growth_rate(sim, "bgrowthrates", id, allele, newgrowthrate)
+            end
+        else
+            @debug "using old microbial strain" mutated_strain_index
+            s.bstrains.abundance[mutated_strain_index...] += 1
+            s.bstrains.total_abundance += 1
+        end
+    else
+        # Update abundance and total abundance
+        s.bstrains.abundance[iB] += 1
+        s.bstrains.total_abundance += 1
+    end
+    @assert s.bstrains.total_abundance == sum(s.bstrains.abundance)
 end
 
+function check_microbial_strain_overlap(sim::Simulation,  iB, allele, spacers)
+    s = sim.state
+    spacer_strain_index = findall(x -> x == spacers, s.bstrains.spacers)
+    mutatedGrowth_strain_index = findall(x -> x == allele, s.bstrains.growthalleles)
+    overlap = intersect(spacer_strain_index, mutatedGrowth_strain_index)
+    @assert length(overlap) < 2 "strain index: $(iB),
+                                strain id: $(s.bstrains.ids[iB]),
+                                spacers: $(old_spacers),
+                                directional: $(p.directional),
+                                locus_resolution: $(p.locus_resolution),
+                                allele_max: $(p.max_allele),
+                                newallele: $(allele),
+                                overlap: $(overlap),
+                                overlap strain ids: $(map(x->s.bstrains.ids[x],overlap)),
+                                spacers: $(map(x->s.bstrains.spacers[x],overlap)),
+                                growthalleles: $(map(x->s.bstrains.growthalleles[x],overlap))"
+
+    mutated_strain_index = nothing
+    if length(intersect(spacer_strain_index, mutatedGrowth_strain_index)) == 1
+        mutated_strain_index = intersect(spacer_strain_index, mutatedGrowth_strain_index)
+    end
+    return mutated_strain_index
+end 
 
 ### MICROBIAL DEATH EVENT ###
 
@@ -276,6 +345,7 @@ function do_event_microbial_death!(sim::Simulation, t::Float64)
     if s.bstrains.abundance[strain_index] == 0 && strain_index != 1
         remove_strain!(s.bstrains, strain_index)
     end
+    @assert s.bstrains.total_abundance == sum(s.bstrains.abundance)
 end
 
 ### MICROBIAL IMMIGRATION EVENT ###
@@ -297,6 +367,7 @@ function do_event_microbial_immigration!(sim::Simulation, t::Float64)
     s = sim.state
     s.bstrains.abundance[1] += 1
     s.bstrains.total_abundance += 1
+    @assert s.bstrains.total_abundance == sum(s.bstrains.abundance)
 end
 
 
@@ -336,6 +407,7 @@ function do_event_viral_decay!(sim::Simulation, t::Float64)
         end
         remove_strain!(s.vstrains, strain_index)
     end
+    @assert s.vstrains.total_abundance == sum(s.vstrains.abundance)
 end
 
 
@@ -422,6 +494,8 @@ function do_event_contact!(sim::Simulation, t::Float64)
     end
 
     @assert s.bstrains.abundance[1] >= 0
+    @assert s.vstrains.total_abundance == sum(s.vstrains.abundance)
+    @assert s.bstrains.total_abundance == sum(s.bstrains.abundance)
 end
 
 
@@ -492,65 +566,33 @@ function acquire_spacer!(sim::Simulation, t::Float64, iB, jV)
         else                                          ### of the CRISPR cassette. Is this what original C code was?
             copy(old_spacers)
         end
-        new_spacers_from_old = copy(new_spacers)
+        # new_spacers_from_old = copy(new_spacers)
         push!(new_spacers, rand(rng, missing_spacers))
-        mutatedSpacer_strain_index = findall(x -> x == new_spacers, s.bstrains.spacers)
-
+        
         should_mutate = false
-        if p.microbe_mutation_prob > 0
-            if rand(rng) < p.microbe_mutation_prob
-                should_mutate = true
+        if p.evofunctionScale > 0
+            if p.microbe_mutation_prob_per_spacer > 0
+                if rand(rng) < p.microbe_mutation_prob_per_spacer
+                    should_mutate = true
+                end
             end
         end
         if should_mutate
-            if p.directional
-                if rand(rng) < 0.5
-                    sign = -1
-                else
-                    sign = 1
-                end
-                newallele = s.bstrains.growthalleles[iB] + sign * p.allelic_change
-                if newallele > p.max_allele || newallele < 2 * (p.center_allele) - p.max_allele
-                    newallele = s.bstrains.growthalleles[iB] - sign * p.allelic_change
-                end
-            else
-                newallele = rand(rng, Uniform(p.center_allele - p.max_allele, p.max_allele))
-            end
-        end
-        if should_mutate
-            allele = newallele
+            allele = mutate_microbe_fitness(sim,iB)
         else
             allele = s.bstrains.growthalleles[iB]
         end
-        mutatedGrowth_strain_index = findall(x -> x == allele, s.bstrains.growthalleles)
-        overlap = intersect(mutatedSpacer_strain_index, mutatedGrowth_strain_index)
-        @assert length(overlap) < 2 "strain index: $(iB),
-                                    strain id: $(s.bstrains.ids[iB]),
-                                    spacers: $(old_spacers),
-                                    directional: $(p.directional),
-                                    allelic_change: $(p.allelic_change),
-                                    allele_max: $(p.max_allele),
-                                    newallele: $(allele),
-                                    new_spacers: $(new_spacers),
-                                    overlap: $(overlap),
-                                    overlap strain ids: $(map(x->s.bstrains.ids[x],overlap)),
-                                    spacers: $(map(x->s.bstrains.spacers[x],overlap)),
-                                    growthalleles: $(map(x->s.bstrains.growthalleles[x],overlap))"
-
-        mutated_strain_index = nothing
-        if length(intersect(mutatedSpacer_strain_index, mutatedGrowth_strain_index)) == 1
-            mutated_strain_index = intersect(mutatedSpacer_strain_index, mutatedGrowth_strain_index)
-        end
+        mutated_strain_index = check_microbial_strain_overlap(sim, iB, allele, new_spacers)
         if mutated_strain_index == nothing
             newgrowthrate = fitness(allele, p.center_allele, p.max_allele, 
                                     p.evofunctionScale, p.max_fitness, p.microbe_death_rate, p.evofunction)
-            @debug "Creating new microbial strain"
-            @debug "Old spacers:" old_spacers
-            @debug "New spacers from old spacers:" new_spacers_from_old
-            @debug "Missing spacers:" missing_spacers
-            @debug "All new spacers:" new_spacers
-            @debug "Old growth rate:" s.bstrains.growthrates[strain_index]
-            @debug "New growth rate:" newgrowthrate
+            # @debug "Creating new microbial strain"
+            # @debug "Old spacers:" old_spacers
+            # @debug "New spacers from old spacers:" new_spacers_from_old
+            # @debug "Missing spacers:" missing_spacers
+            # @debug "All new spacers:" new_spacers
+            # @debug "Old growth rate:" s.bstrains.growthrates[iB]
+            # @debug "New growth rate:" newgrowthrate
             id = s.bstrains.next_id
             s.bstrains.next_id += 1
             push!(s.bstrains.ids, id) #Adds new strain identity
@@ -558,7 +600,7 @@ function acquire_spacer!(sim::Simulation, t::Float64, iB, jV)
             push!(s.bstrains.spacers, new_spacers)
             push!(s.bstrains.growthalleles, allele)
             push!(s.bstrains.growthrates, newgrowthrate)
-            # println(s.bstrains.growthrates)
+
             if p.enable_output
                 write_strain(sim, "bstrains", id, s.bstrains.ids[iB], s.vstrains.ids[jV])
                 write_spacers(sim, "bspacers", id, new_spacers)
@@ -569,6 +611,31 @@ function acquire_spacer!(sim::Simulation, t::Float64, iB, jV)
             s.bstrains.abundance[mutated_strain_index...] += 1
         end
     end
+end
+
+function mutate_microbe_fitness(sim::Simulation, iB)
+    rng = sim.rng
+    p = sim.params
+    s = sim.state
+    if p.directional
+        if rand(rng) < 0.5
+            sign = -1
+        else
+            sign = 1
+        end
+        newallele = s.bstrains.growthalleles[iB] + sign * p.locus_resolution
+        if newallele > p.max_allele || newallele < 2 * (p.center_allele) - p.max_allele
+            newallele = s.bstrains.growthalleles[iB] - sign * p.locus_resolution
+        end
+    else
+        # newallele = rand(rng, Uniform(-p.max_allele, p.max_allele))
+        if p.center_allele == 0
+            newallele = rand(rng, abs.(collect((2*(p.center_allele)-p.max_allele):(p.locus_resolution):(p.max_allele))))
+        else
+            newallele = rand(rng, collect((2*(p.center_allele)-p.max_allele):(p.locus_resolution):(p.max_allele)))
+        end
+    end
+    return newallele
 end
 
 

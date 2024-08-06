@@ -63,7 +63,7 @@ dbOutputPath = joinpath("temporal-adaptation_output.sqlite") # cluster
 #
 #end
 #dbTempMatch = SQLite.DB(dbMatchPath)
-dbTempSim = SQLite.DB(dbSimPath)
+dbSim = SQLite.DB(dbSimPath)
 dbOutput = SQLite.DB(dbOutputPath)
 
 execute(dbOutput, "CREATE TABLE temporal_adaptation (time_delay REAL, TA REAL)")
@@ -72,48 +72,56 @@ execute(dbOutput, "CREATE TABLE bstrain_to_vstrain_0matches (vstrain_id INTEGER,
 maxT = maximum([t for (t,) in execute(dbTempSim, "SELECT t_final FROM param_combos")])
 
 # Create temporary database that is a copy of the main database at the run_id value of the script's argument
-# dbTempSim = SQLite.DB(dbSimPath)
+tmpPath = joinpath(ENV["SLURM_TMPDIR"], "$(run_id).sqlite")
+dbTempSim = SQLite.DB(tmpPath)
 # dbTempSim = SQLite.DB("/Volumes/Yadgah/test.sqlite") # local
-#execute(dbTempSim, "CREATE TABLE babundance (t REAL, bstrain_id INTEGER, abundance INTEGER)")
-#execute(dbTempSim, "CREATE TABLE vabundance (t REAL, vstrain_id INTEGER, abundance INTEGER)")
-#execute(dbTempSim, "CREATE TABLE summary (t REAL, microbial_abundance INTEGER, viral_abundance INTEGER)")
-#execute(dbTempSim, "BEGIN TRANSACTION")
-#execute(dbTempSim, "ATTACH DATABASE '$(dbSimPath)' as dbSim")
-#execute(dbTempSim, "INSERT INTO babundance (t, bstrain_id, abundance) SELECT t, bstrain_id, abundance FROM dbSim.babundance WHERE run_id = $(run_id);")
-#execute(dbTempSim, "INSERT INTO vabundance (t, vstrain_id, abundance) SELECT t, vstrain_id, abundance FROM dbSim.vabundance WHERE run_id = $(run_id);")
-#execute(dbTempSim, "INSERT INTO summary (t, microbial_abundance, viral_abundance) SELECT t, microbial_abundance, viral_abundance FROM dbSim.summary WHERE run_id = $(run_id);")
-#execute(dbTempSim, "COMMIT")
-#execute(dbTempSim, "BEGIN TRANSACTION")
-#execute(dbTempSim, "CREATE INDEX babundance_index ON babundance (t,bstrain_id)")
-#execute(dbTempSim, "CREATE INDEX vabundance_index ON vabundance (t,vstrain_id)")
-#execute(dbTempSim, "CREATE INDEX summary_index ON summary (t)")
-#execute(dbTempSim, "COMMIT")
+execute(dbTempSim, "CREATE TABLE babundance (t REAL, bstrain_id INTEGER, abundance INTEGER)")
+execute(dbTempSim, "CREATE TABLE vabundance (t REAL, vstrain_id INTEGER, abundance INTEGER)")
+execute(dbTempSim, "CREATE TABLE bspacers (bstrain_id INTEGER, spacer_id INTEGER)")
+execute(dbTempSim, "CREATE TABLE vpspacers (vstrain_id INTEGER, spacer_id INTEGER)")
+execute(dbTempSim, "CREATE TABLE vabundance (t REAL, vstrain_id INTEGER, abundance INTEGER)")
+execute(dbTempSim, "CREATE TABLE summary (t REAL, microbial_abundance INTEGER, viral_abundance INTEGER)")
+execute(dbTempSim, "BEGIN TRANSACTION")
+execute(dbTempSim, "ATTACH DATABASE '$(dbSimPath)' as dbSim")
+execute(dbTempSim, "INSERT INTO babundance (t, bstrain_id, abundance) SELECT t, bstrain_id, abundance FROM dbSim.babundance WHERE run_id = $(run_id);")
+execute(dbTempSim, "INSERT INTO vabundance (t, vstrain_id, abundance) SELECT t, vstrain_id, abundance FROM dbSim.vabundance WHERE run_id = $(run_id);")
+execute(dbTempSim, "INSERT INTO bspacers (bstrain_id, spacer_id) SELECT bstrain_id, spacer_id FROM dbSim.bspacers WHERE run_id = $(run_id);")
+execute(dbTempSim, "INSERT INTO vpspacers (vstrain_id, spacer_id) SELECT vstrain_id, spacer_id FROM dbSim.vpspacers WHERE run_id = $(run_id);")
+execute(dbTempSim, "INSERT INTO summary (t, microbial_abundance, viral_abundance) SELECT t, microbial_abundance, viral_abundance FROM dbSim.summary WHERE run_id = $(run_id);")
+execute(dbTempSim, "COMMIT")
+execute(dbTempSim, "BEGIN TRANSACTION")
+execute(dbTempSim, "CREATE INDEX babundance_index ON babundance (t,bstrain_id)")
+execute(dbTempSim, "CREATE INDEX vabundance_index ON vabundance (t,vstrain_id)")
+execute(dbTempSim, "CREATE INDEX bspacers_index ON bspacers (bstrain_id)")
+execute(dbTempSim, "CREATE INDEX vpspacers_index ON vpspacers (vstrain_id)")
+execute(dbTempSim, "CREATE INDEX summary_index ON summary (t)")
+execute(dbTempSim, "COMMIT")
 
-function identify0Matches(run_id)
+function identify0Matches()
     maxbID = maximum([bID for (bID,) in execute(dbTempSim,
         "SELECT DISTINCT bstrain_id FROM babundance
-        WHERE run_id = $(run_id) ORDER BY bstrain_id")])
+        ORDER BY bstrain_id")])
     maxsID = maximum([sID for (sID,) in
-                      execute(dbTempSim, "SELECT spacer_id FROM vpspacers WHERE run_id = $(run_id)")])
+                      execute(dbTempSim, "SELECT spacer_id FROM vpspacers")])
     maxvID = maximum([bID for (bID,) in execute(dbTempSim,
         "SELECT DISTINCT vstrain_id FROM vabundance
-        WHERE run_id = $(run_id) ORDER BY vstrain_id")])
+        ORDER BY vstrain_id")])
     vspacers = Array{Array{Bool,1},1}([zeros(Bool, maxsID) for i in 1:maxvID])
     bspacers = Array{Array{Array{Bool,1},1},1}([[zeros(Bool, maxsID) for i in 1:maxbID] for i in 1:maxvID])
     for (bstrain_id,) in execute(
         dbTempSim,
         "SELECT DISTINCT bstrain_id FROM babundance
-        WHERE run_id = $(run_id) ORDER BY bstrain_id")
+        ORDER BY bstrain_id")
         # println("bstrain: $(bstrain_id)")
         if bstrain_id == 1
             continue
         end
         for (spacer_id,) in
-            execute(dbTempSim, "SELECT spacer_id FROM bspacers WHERE run_id = $(run_id) AND bstrain_id = $(bstrain_id)")
+            execute(dbTempSim, "SELECT spacer_id FROM bspacers WHERE bstrain_id = $(bstrain_id)")
             for (vstrain_id,) in execute(
                 dbTempSim,
                 "SELECT DISTINCT vstrain_id FROM vabundance
-                WHERE run_id = $(run_id) ORDER BY vstrain_id")
+                ORDER BY vstrain_id")
                 bspacers[vstrain_id][bstrain_id][spacer_id] = Bool(1)
             end
         end
@@ -121,10 +129,10 @@ function identify0Matches(run_id)
     for (vstrain_id,) in execute(
         dbTempSim,
         "SELECT DISTINCT vstrain_id FROM vabundance
-        WHERE run_id = $(run_id) ORDER BY vstrain_id")
+        ORDER BY vstrain_id")
         # println("vstrain: $(vstrain_id)")
         for (spacer_id,) in
-            execute(dbTempSim, "SELECT spacer_id FROM vpspacers WHERE run_id = $(run_id) AND vstrain_id = $(vstrain_id)")
+            execute(dbTempSim, "SELECT spacer_id FROM vpspacers WHERE vstrain_id = $(vstrain_id)")
             # println(spacer_id)
             vspacers[vstrain_id][spacer_id] = Bool(1)
         end
@@ -132,11 +140,11 @@ function identify0Matches(run_id)
     for (vstrain_id,) in execute(
         dbTempSim,
         "SELECT DISTINCT vstrain_id FROM vabundance
-        WHERE run_id = $(run_id) ORDER BY vstrain_id")
+        ORDER BY vstrain_id")
         for (bstrain_id,) in execute(
             dbTempSim,
             "SELECT DISTINCT bstrain_id FROM babundance
-            WHERE run_id = $(run_id) ORDER BY bstrain_id")
+            ORDER BY bstrain_id")
             # println("vstrain: $(vstrain_id), bstrain: $(bstrain_id)")
             bspacers[vstrain_id][bstrain_id] = bspacers[vstrain_id][bstrain_id] .* vspacers[vstrain_id]
             if sum(bspacers[vstrain_id][bstrain_id]) == 0
@@ -150,8 +158,8 @@ function identify0Matches(run_id)
     execute(dbOutput, "COMMIT")
 end
 
-function temporalAdaptation(run_id, maxT, delayInc)
-    maxSimT = maximum([t for (t,) in execute(dbTempSim, "SELECT t FROM vabundance WHERE run_id = $(run_id)")])
+function temporalAdaptation(maxT, delayInc)
+    maxSimT = maximum([t for (t,) in execute(dbTempSim, "SELECT t FROM vabundance")])
     delays = unique([reverse(collect(0:-delayInc:-maxT))..., collect(0:delayInc:maxT)...])
     for delay in delays
         println("DELAY: $(delay)")
@@ -160,32 +168,31 @@ function temporalAdaptation(run_id, maxT, delayInc)
         end
         TA = 0
         n = 0
-        for (t,) in execute(dbTempSim, "SELECT DISTINCT t FROM vabundance WHERE run_id = $(run_id) ORDER BY t")
+        for (t,) in execute(dbTempSim, "SELECT DISTINCT t FROM vabundance ORDER BY t")
             # println("time: $(t)")
             if t + delay > maxSimT || t + delay < 0
                 continue
             end
-            btimes = [t for (t,) in execute(dbTempSim, "SELECT t FROM summary
-                        WHERE run_id = $(run_id)")]
+            btimes = [t for (t,) in execute(dbTempSim, "SELECT t FROM summary")]
             if !in(t+delay,btimes)
                 tpast = maximum(btimes[btimes.<t+delay])
                 (btotal,) = execute(
                 dbTempSim,
                 "SELECT microbial_abundance FROM summary
-                WHERE run_id = $(run_id) AND t = $(tpast)"
+                WHERE t = $(tpast)"
                 )
             else
                 (btotal,) = execute(
                 dbTempSim,
                 "SELECT microbial_abundance FROM summary
-                WHERE run_id = $(run_id) AND t = $(t + delay)"
+                WHERE t = $(t + delay)"
                 )
             end
             btotal = btotal.microbial_abundance
             (vtotal,) = execute(
                 dbTempSim,
                 "SELECT viral_abundance FROM summary
-                WHERE run_id = $(run_id) AND t = $(t)"
+                WHERE t = $(t)"
             )
             vtotal = vtotal.viral_abundance
             if vtotal == 0 || btotal == 0
@@ -194,7 +201,7 @@ function temporalAdaptation(run_id, maxT, delayInc)
             vstrains = DataFrame(execute(
                 dbTempSim,
                 "SELECT vstrain_id, abundance FROM vabundance
-                WHERE run_id = $(run_id) AND t = $(t)"
+                WHERE t = $(t)"
             ))
             rename!(vstrains, :abundance => :vfreq)
             vstrains = vstrains[vstrains.vfreq.!=0, :]
@@ -203,27 +210,27 @@ function temporalAdaptation(run_id, maxT, delayInc)
                 bstrains = DataFrame(execute(
                     dbTempSim,
                     "SELECT bstrain_id, abundance FROM babundance
-                    WHERE run_id = $(run_id) AND t = $(tpast)"
+                    WHERE t = $(tpast)"
                 ))
                 rename!(bstrains, :abundance => :bfreq)
                 bstrains = bstrains[bstrains.bfreq.!=0, :]
                 (btotal,) = execute(
                     dbTempSim,
                     "SELECT microbial_abundance FROM summary
-                    WHERE run_id = $(run_id) AND t = $(tpast)"
+                    WHERE t = $(tpast)"
                 )
             else
                 bstrains = DataFrame(execute(
                     dbTempSim,
                     "SELECT bstrain_id, abundance FROM babundance
-                    WHERE run_id = $(run_id) AND t = $(t + delay)"
+                    WHERE t = $(t + delay)"
                 ))
                 rename!(bstrains, :abundance => :bfreq)
                 bstrains = bstrains[bstrains.bfreq.!=0, :]
                 (btotal,) = execute(
                     dbTempSim,
                     "SELECT microbial_abundance FROM summary
-                    WHERE run_id = $(run_id) AND t = $(t + delay)"
+                    WHERE t = $(t + delay)"
                 )
             end
             btotal = btotal.microbial_abundance
@@ -257,8 +264,8 @@ function temporalAdaptation(run_id, maxT, delayInc)
     end
 end
 
-identify0Matches(run_id)
-temporalAdaptation(run_id, maxT, delayInc)
+identify0Matches()
+temporalAdaptation(maxT, delayInc)
 # execute(dbOutput, "DROP TABLE bstrain_to_vstrain_0matches")
-
+rm(tmpPath, force=true)
 println("Complete!")

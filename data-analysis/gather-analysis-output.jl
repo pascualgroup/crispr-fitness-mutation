@@ -37,6 +37,8 @@ function main()
 
     is_first = true
     table_names = []
+    # Start up new connection; weird things seem to happen with attached databases otherwise
+    db = SQLite.DB(joinpath(an_dir, "$(analysisType).sqlite"))
     for (run_id, run_dir) in run_pairs
         rundb_path = joinpath(analysisDir,run_dir, "$(analysisType)_output.sqlite")
         #if !issubset(run_id,[1343, 1344, 1345])
@@ -49,8 +51,6 @@ function main()
             println("Processing: $(rundb_path)")
         end
 
-        # Start up new connection; weird things seem to happen with attached databases otherwise
-        db = SQLite.DB(joinpath(an_dir,"$(analysisType).sqlite"))
         execute(db, "BEGIN TRANSACTION")
 
         # Connect to output database as sub-db inside connection

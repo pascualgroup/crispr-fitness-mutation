@@ -23,10 +23,10 @@ dbSimPath = joinpath(SCRIPT_PATH, "..", "..", "simulation", "sweep_db_gathered.s
 
 dbSim = SQLite.DB(dbSimPath)
 dbOutput = SQLite.DB(dbOutputPath)
-execute(dbOutput, "CREATE TABLE b_fitness_richness_shift (t0 REAL, initial_richness REAL, time_elapsed REAL, final_richness REAL, richness_shift REAL)")
-execute(dbOutput, "CREATE TABLE b_fitness_shannon_shift (t0 REAL, initial_shannon REAL, time_elapsed REAL, final_shannon REAL, shannon_shift REAL)")
-execute(dbOutput, "CREATE TABLE b_fitness_expectation_shift (t0 REAL, initial_exp REAL, time_elapsed REAL, final_exp REAL, exp_shift REAL)")
-execute(dbOutput, "CREATE TABLE b_fitness_variance_shift (t0 REAL, initial_var REAL, time_elapsed REAL, final_var REAL, var_shift REAL)")
+# execute(dbOutput, "CREATE TABLE b_fitness_richness_shift (t0 REAL, initial_richness REAL, time_elapsed REAL, final_richness REAL, richness_shift REAL)")
+# execute(dbOutput, "CREATE TABLE b_fitness_shannon_shift (t0 REAL, initial_shannon REAL, time_elapsed REAL, final_shannon REAL, shannon_shift REAL)")
+# execute(dbOutput, "CREATE TABLE b_fitness_expectation_shift (t0 REAL, initial_exp REAL, time_elapsed REAL, final_exp REAL, exp_shift REAL)")
+# execute(dbOutput, "CREATE TABLE b_fitness_variance_shift (t0 REAL, initial_var REAL, time_elapsed REAL, final_var REAL, var_shift REAL)")
 
 
 function traitEvolution()
@@ -67,42 +67,42 @@ function traitEvolution()
         "b_intrinsic_fitness_expectation", ifnotexists=true)
     var |> SQLite.load!(dbOutput,
         "b_intrinsic_fitness_variance", ifnotexists=true)
-    for (k,l) in zip(t0,dt)
-        if k+l > maximum(bfreq[!,:t]) 
-            continue
-        end
-        times = unique(bfreq[!,:t])
-        if !in(k,times)
-            i = maximum(times[times.<k])
-        else
-            i = k
-        end
-        if !in(k+l, times)
-            j = maximum(times[times.<k+l])
-        else
-            j = k+l
-        end
-        rich0 = richness[richness.t.==i, :].richness[1]
-        richf = richness[richness.t.==j, :].richness[1]
-        dRich = richf - rich0
-        shan0 = shannon[shannon.t.==i, :].shannon[1]
-        shanf = shannon[shannon.t.==j, :].shannon[1]
-        dShan = shanf - shan0
-        exp0 = expectation[expectation.t.==i, :].expectation[1]
-        expf = expectation[expectation.t.==j, :].expectation[1]
-        dExp = expf - exp0
-        var0 = var[var.t.==i, :].variance[1]
-        varf = var[var.t.==j, :].variance[1]
-        dVar = varf - var0
-        execute(dbOutput, "INSERT INTO b_fitness_richness_shift VALUES (?,?,?,?,?)",
-            (k, rich0, k+l, richf, dRich))
-        execute(dbOutput, "INSERT INTO b_fitness_shannon_shift VALUES (?,?,?,?,?)",
-            (k, shan0, k+l, shanf, dShan))
-        execute(dbOutput, "INSERT INTO b_fitness_expectation_shift VALUES (?,?,?,?,?)",
-            (k, exp0, k+l, expf, dExp))
-        execute(dbOutput, "INSERT INTO b_fitness_variance_shift VALUES (?,?,?,?,?)",
-            (k, var0, k+l, varf, dVar))
-    end
+    # for (k,l) in zip(t0,dt)
+    #     if k+l > maximum(bfreq[!,:t]) 
+    #         continue
+    #     end
+    #     times = unique(bfreq[!,:t])
+    #     if !in(k,times)
+    #         i = maximum(times[times.<k])
+    #     else
+    #         i = k
+    #     end
+    #     if !in(k+l, times)
+    #         j = maximum(times[times.<k+l])
+    #     else
+    #         j = k+l
+    #     end
+    #     rich0 = richness[richness.t.==i, :].richness[1]
+    #     richf = richness[richness.t.==j, :].richness[1]
+    #     dRich = richf - rich0
+    #     shan0 = shannon[shannon.t.==i, :].shannon[1]
+    #     shanf = shannon[shannon.t.==j, :].shannon[1]
+    #     dShan = shanf - shan0
+    #     exp0 = expectation[expectation.t.==i, :].expectation[1]
+    #     expf = expectation[expectation.t.==j, :].expectation[1]
+    #     dExp = expf - exp0
+    #     var0 = var[var.t.==i, :].variance[1]
+    #     varf = var[var.t.==j, :].variance[1]
+    #     dVar = varf - var0
+    #     execute(dbOutput, "INSERT INTO b_fitness_richness_shift VALUES (?,?,?,?,?)",
+    #         (k, rich0, k+l, richf, dRich))
+    #     execute(dbOutput, "INSERT INTO b_fitness_shannon_shift VALUES (?,?,?,?,?)",
+    #         (k, shan0, k+l, shanf, dShan))
+    #     execute(dbOutput, "INSERT INTO b_fitness_expectation_shift VALUES (?,?,?,?,?)",
+    #         (k, exp0, k+l, expf, dExp))
+    #     execute(dbOutput, "INSERT INTO b_fitness_variance_shift VALUES (?,?,?,?,?)",
+    #         (k, var0, k+l, varf, dVar))
+    # end
 end
 
 traitEvolution()

@@ -35,7 +35,7 @@ ID = curSim.execute('SELECT combo_id,replicate FROM runs WHERE run_id = {}'.form
 combo_id = ID[0][0]
 replicate = ID[0][1]
 
-PLOT_PATH = os.path.join(SCRIPT_PATH,'..', 'plots','c{}'.format(combo_id),'r{}'.format(replicate))
+PLOT_PATH = os.path.join(SCRIPT_PATH,'..', 'plots','runs','c{}'.format(combo_id),'r{}'.format(replicate))
 
 
 virus_total = pd.read_sql_query("SELECT t, viral_abundance \

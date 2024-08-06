@@ -98,7 +98,7 @@ function generate_analysis_runs(dbSim::DB) # This function generates the directo
                 print(f, """
                 #!/bin/sh
                 cd `dirname \$0`
-                julia $(ROOT_RUN_SCRIPT) $(run_id) $(argString...) combo &> run-output-$(analysisType).txt
+                /share/apps/julia/1.6.1/bin/julia $(ROOT_RUN_SCRIPT) $(run_id) $(argString...) combo &> run-output-$(analysisType).txt
                 """)
             end
         else
@@ -176,19 +176,19 @@ function generate_analysis_jobs(dbSim::DB,dbTempJobs::DB,numSubmits::Int64)
         open(job_sbatch, "w") do f
             print(f, """
             #!/bin/sh
-            #SBATCH --account=pi-pascualmm
-            #SBATCH --partition=broadwl
+            #SBATCH --nodes=1
+            #SBATCH --ntasks-per-node=$(n_cores)
+            #SBATCH --cpus-per-task=1
             #SBATCH --job-name=$(job_id)$(analysisType)
-            #SBATCH --tasks=1
-            #SBATCH --cpus-per-task=$(n_cores)
             #SBATCH --mem-per-cpu=$(mem_per_cpu)m
-            #SBATCH --time=1-12:00:00
+            #SBATCH --time=6:00:00
             #SBATCH --chdir=$(joinpath(SCRIPT_PATH, job_dir))
-            #SBATCH --output=job-output.txt
-            #SBATCH --mail-user=armun@uchicago.edu
-            # Uncomment this to use the Midway-provided Julia:
-            module load julia
-            julia $(ROOT_RUNMANY_SCRIPT) $(n_cores) runs.txt
+            #SBATCH --output=output.txt
+            #SBATCH --mail-type=END,FAIL,REQUEUE
+            #SBATCH --mail-user=al8784@nyu.edu
+            module purge
+            module load julia/1.6.1
+            ~/julia/my-julia $(ROOT_RUNMANY_SCRIPT) $(n_cores) runs.txt
             """)
         end
         run(`chmod +x $(job_sbatch)`) # Make run script executable (for local testing)

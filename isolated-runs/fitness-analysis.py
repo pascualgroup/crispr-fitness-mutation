@@ -1011,29 +1011,29 @@ if sys.argv[2] == 'traitfitness':
     expgrowth = growthrates.copy()
     expgrowth['growth_rate'] = expgrowth['growth_rate']*expgrowth['bfreq']
     expgrowth = expgrowth.groupby(['t']).agg(exp=('growth_rate','sum')).reset_index()
-fig, ax = plt.subplots(2,sharex=True)
-axes = [ax[0], ax[0].twinx(), ax[1], ax[1].twinx()]
-microbe_stacked = bAbunds[bAbunds.t<=max(virus_total['t'])].pivot(index='t',columns='tree_bstrain_id',values='abundance')
-microbe_stacked.plot.area(ax = axes[0],stacked=True,legend=False, linewidth=0,color=bSpeciesColorDict,sort_columns=True)
-microbe_stacked.plot(stacked=True, ax=axes[0], legend=False, color='white',sort_columns=True,linewidth=.1)
-axes[0].set_ylabel(ylabel ='Host Abundance',labelpad=15,fontsize=7)
-axes[0].set_xlabel(xlabel = 'Time t',fontsize=7)
-axes[0].ticklabel_format(axis = 'y',style='sci',scilimits=(0,0))
-axes[0].xaxis.set_minor_locator(ticker.MultipleLocator(25))
-axes[1].plot(virus_total['t'],virus_total['Viral Abundance'],linewidth=0,color='grey')
-axes[1].fill_between(virus_total['t'],virus_total['Viral Abundance'], color='grey',alpha=0.6)
-axes[0].margins(x=0)
-axes[1].margins(x=0)
-lim = axes[1].get_ylim()
-axes[1].set_ylim(0,lim[1])
-axes[2].fill_between(virus_total['t'],virus_total['Viral Abundance'], color='grey',alpha=0.6)
-lim = axes[2].get_ylim()
-axes[2].set_ylim(0,lim[1])
-axes[2].set_yticklabels([])
-axes[2].set_yticks([])
-axes[2].margins(x=0)
-axes[3].margins(x=0)
-axes[3].plot(expgrowth['t'],expgrowth['exp'],color = 'darkblue',label='Microbe',linewidth=1)
+    fig, ax = plt.subplots(2,sharex=True)
+    axes = [ax[0], ax[0].twinx(), ax[1], ax[1].twinx()]
+    microbe_stacked = bAbunds[bAbunds.t<=max(virus_total['t'])].pivot(index='t',columns='tree_bstrain_id',values='abundance')
+    microbe_stacked.plot.area(ax = axes[0],stacked=True,legend=False, linewidth=0,color=bSpeciesColorDict,sort_columns=True)
+    microbe_stacked.plot(stacked=True, ax=axes[0], legend=False, color='white',sort_columns=True,linewidth=.1)
+    axes[0].set_ylabel(ylabel ='Host Abundance',labelpad=15,fontsize=7)
+    axes[0].set_xlabel(xlabel = 'Time t',fontsize=7)
+    axes[0].ticklabel_format(axis = 'y',style='sci',scilimits=(0,0))
+    axes[0].xaxis.set_minor_locator(ticker.MultipleLocator(25))
+    axes[1].plot(virus_total['t'],virus_total['Viral Abundance'],linewidth=0,color='grey')
+    axes[1].fill_between(virus_total['t'],virus_total['Viral Abundance'], color='grey',alpha=0.6)
+    axes[0].margins(x=0)
+    axes[1].margins(x=0)
+    lim = axes[1].get_ylim()
+    axes[1].set_ylim(0,lim[1])
+    axes[2].fill_between(virus_total['t'],virus_total['Viral Abundance'], color='grey',alpha=0.6)
+    lim = axes[2].get_ylim()
+    axes[2].set_ylim(0,lim[1])
+    axes[2].set_yticklabels([])
+    axes[2].set_yticks([])
+    axes[2].margins(x=0)
+    axes[3].margins(x=0)
+    axes[3].plot(expgrowth['t'],expgrowth['exp'],color = 'darkblue',label='Microbe',linewidth=1)
 
 
 
@@ -1143,11 +1143,11 @@ if sys.argv[2] == 'viraltemporaladaptation':
 
 
 if sys.argv[2] == 'temporaladaptation':
-    comboID = sys.argv[1]
-    # SQLITE path to simulation data
-    DBSIM_PATH = os.path.join(SCRIPT_PATH,'isolates',\
-                                'comboID{}'.format(comboID),\
-                                    'comboID{}.sqlite'.format(comboID))
+    # comboID = sys.argv[1]
+    # # SQLITE path to simulation data
+    # DBSIM_PATH = os.path.join(SCRIPT_PATH,'isolates',\
+    #                             'comboID{}'.format(comboID),\
+    #                                 'comboID{}.sqlite'.format(comboID))
     comboID = 3
     DBSIM_PATH = os.path.join('/Volumes/Yadgah/sylvain-martin-collab/',
                                 '14_MOI3/sweep_db_gathered.sqlite')
@@ -1189,7 +1189,7 @@ if sys.argv[2] == 'temporaladaptation':
     meanLA['LA'] = meanLA['vfitness'] - 1/(reps-1)*meanLA['interFitness']
     meanLA = meanLA.groupby(['t'])\
                     .agg(mean=('LA', 'mean'),std=('LA','std'),n=('LA','size')).reset_index()
-    nThresh = 15
+    nThresh = 2
     meanLAthresh = meanLA[meanLA.n >= nThresh]
     meanTAthresh = meanTA[meanTA.n >= nThresh]
     ###
@@ -1226,7 +1226,7 @@ if sys.argv[2] == 'temporaladaptation':
     meanLA2['LA'] = meanLA2['vfitness'] - 1/(reps-1)*meanLA2['interFitness']
     meanLA2 = meanLA2.groupby(['t'])\
                     .agg(mean=('LA', 'mean'),std=('LA','std'),n=('LA','size')).reset_index()
-    nThresh = 15
+    nThresh = 2
     meanLAthresh2 = meanLA2[meanLA2.n >= nThresh]
     meanTAthresh2 = meanTA2[meanTA2.n >= nThresh]
     
@@ -1258,7 +1258,7 @@ if sys.argv[2] == 'temporaladaptation':
     axes[0].xaxis.set_minor_locator(ticker.MultipleLocator(50))
     axes[1].xaxis.set_minor_locator(ticker.MultipleLocator(50))
     axes[0].set_ylabel(ylabel ='Viral Temporal Adaptation (TA)',labelpad=15,fontsize=15)
-    axes[0].set_xlabel(xlabel = 'Time t',fontsize=15,labelpad=15)
+    axes[0].set_xlabel(xlabel = r'Delay $\tau$',fontsize=15,labelpad=15)
     axes[1].set_ylabel(ylabel ='Viral Local Adaptation (LA)',labelpad=15,fontsize=15)
     axes[1].set_xlabel(xlabel = 'Time t',fontsize=15,labelpad=15)
     axes[0].tick_params(axis='x', labelsize=15)
@@ -1270,6 +1270,277 @@ if sys.argv[2] == 'temporaladaptation':
     # fig.tight_layout(pad=5)
     plt.show()
    
+
+
+
+if sys.argv[2] == 'adaptation-decomposition':
+    nThresh = 10
+    comboID = 3
+    DBSIM_PATH = os.path.join('/Volumes/Yadgah/sylvain-martin-collab/',
+                                '14_MOI3/sweep_db_gathered.sqlite')
+    DBTEMP_PATH = os.path.join('/Volumes/Yadgah/sylvain-martin-collab/14_MOI3',
+                                'temporal-adaptationC{}.sqlite'.format(comboID))  # cluster
+    DBLOC_PATH = os.path.join('/Volumes/Yadgah/sylvain-martin-collab/14_MOI3',
+                                'local-adaptationC{}.sqlite'.format(comboID))  # cluster
+    conSim = sqlite3.connect(DBSIM_PATH)
+    curSim = conSim.cursor()
+    runIDs = [runID for (runID,) in curSim.execute(
+    "SELECT run_id FROM runs \
+        WHERE combo_id = ({})"
+    .format(comboID)).fetchall()]
+    conTemp = sqlite3.connect(DBTEMP_PATH)
+    curTemp = conTemp.cursor()
+    conLoc = sqlite3.connect(DBLOC_PATH)
+    curLoc = conLoc.cursor()
+    tempAdapt = pd.read_sql_query("SELECT time_delay, TA, run_id\
+        FROM temporal_adaptation", conTemp)
+    meanTA = tempAdapt.groupby(['time_delay'])\
+        .agg(mean=('TA', 'mean'),std=('TA','std'),n=('run_id','size')).reset_index()\
+        .dropna()
+
+    # localAdapt = pd.read_sql_query("SELECT brun_id, t, vstrain_id, vfitness, run_id \
+    #                 FROM local_adaptation", conLoc)
+    intraFitness = pd.DataFrame({'t': [], 'run_id': [], 'vfitness': [], })
+    interFitness = pd.DataFrame({'t': [], 'run_id': [], 'interFitness': [], })
+    for (runID,) in curLoc.execute("SELECT DISTINCT run_id FROM local_adaptation"):
+        # print(runID)
+        sumFitness = pd.read_sql_query("SELECT t, vfitness, run_id \
+                    FROM local_adaptation WHERE run_id = {0} AND brun_id = {0}".format(runID), conLoc)
+        sumFitness = sumFitness.groupby(['t','run_id']).agg(vfitness=('vfitness','sum')).reset_index()
+        intraFitness = pd.concat([intraFitness, sumFitness]).reset_index(drop=True)
+        sumFitness = pd.read_sql_query("SELECT t, vfitness, run_id \
+                    FROM local_adaptation WHERE run_id = {0} AND brun_id != {0}".format(runID), conLoc)
+        sumFitness = sumFitness.groupby(['t', 'run_id']).agg(interFitness=('vfitness', 'sum')).reset_index()
+        interFitness = pd.concat([interFitness, sumFitness]).reset_index(drop=True)
+
+    
+    reps = len(pd.read_sql_query("SELECT run_id \
+                    FROM runs WHERE combo_id = {0}".format(comboID), conLoc)['run_id'])
+    meanLA = intraFitness.merge(interFitness,on=['t','run_id'])
+    meanLA['LA'] = meanLA['vfitness'] - 1/(reps-1)*meanLA['interFitness']
+    meanLA['interFitness'] = 1/(reps-1)*meanLA['interFitness']
+    meanLA = meanLA.groupby(['t'])\
+                    .agg(mean=('LA', 'mean'),std=('LA','std'),
+                         meanIntra=('vfitness', 'mean'),stdIntra=('vfitness','std'), 
+                         meanInter=('interFitness', 'mean'),stdInter=('interFitness','std'),
+                         n=('LA','size')).reset_index()
+    meanLAthresh = meanLA[meanLA.n >= nThresh]
+    meanTAthresh = meanTA[meanTA.n >= nThresh]
+    virus_total = pd.read_sql_query("SELECT run_id, t, viral_abundance FROM summary \
+                                WHERE run_id in ({}) AND viral_abundance > 0"
+                                .format(', '.join(map(str, runIDs))), conSim)\
+    .rename(columns={"viral_abundance": "vtotal"})
+    vstats = virus_total.groupby(['t'])\
+    .agg(exp_vtotal=('vtotal', 'mean'), std_vtotal=('vtotal', 'std'), n=('vtotal', 'size'))\
+    .reset_index()
+    vstats = vstats[vstats.n >= nThresh]
+    ###
+    comboID = 27
+    DBSIM_PATH = os.path.join('/Volumes/Yadgah/sylvain-martin-collab/',
+                                '12_MOI3/sweep_db_gathered.sqlite')
+    DBTEMP_PATH = os.path.join('/Volumes/Yadgah/sylvain-martin-collab/12_MOI3/',
+                                'temporal-adaptationC{}.sqlite'.format(comboID))  # cluster
+    DBLOC_PATH = os.path.join('/Volumes/Yadgah/sylvain-martin-collab/12_MOI3',
+                                'local-adaptationC{}.sqlite'.format(comboID))  # cluster
+    conSim = sqlite3.connect(DBSIM_PATH)
+    curSim = conSim.cursor()
+    runIDs = [runID for (runID,) in curSim.execute(
+    "SELECT run_id FROM runs \
+        WHERE combo_id = ({})"
+    .format(comboID)).fetchall()]
+    conTemp = sqlite3.connect(DBTEMP_PATH)
+    curTemp = conTemp.cursor()
+    conLoc = sqlite3.connect(DBLOC_PATH)
+    curLoc = conLoc.cursor()
+    tempAdapt = pd.read_sql_query("SELECT time_delay, TA, run_id\
+        FROM temporal_adaptation", conTemp)
+    meanTA2 = tempAdapt.groupby(['time_delay'])\
+        .agg(mean=('TA', 'mean'),std=('TA','std'),n=('run_id','size')).reset_index()\
+        .dropna()
+    intraFitness = pd.DataFrame({'t': [], 'run_id': [], 'vfitness': [], })
+    interFitness = pd.DataFrame({'t': [], 'run_id': [], 'interFitness': [], })
+    for (runID,) in curLoc.execute("SELECT DISTINCT run_id FROM local_adaptation"):
+        # print(runID)
+        sumFitness = pd.read_sql_query("SELECT t, vfitness, run_id \
+                    FROM local_adaptation WHERE run_id = {0} AND brun_id = {0}".format(runID), conLoc)
+        sumFitness = sumFitness.groupby(['t','run_id']).agg(vfitness=('vfitness','sum')).reset_index()
+        intraFitness = pd.concat([intraFitness, sumFitness]).reset_index(drop=True)
+        sumFitness = pd.read_sql_query("SELECT t, vfitness, run_id \
+                    FROM local_adaptation WHERE run_id = {0} AND brun_id != {0}".format(runID), conLoc)
+        sumFitness = sumFitness.groupby(['t', 'run_id']).agg(interFitness=('vfitness', 'sum')).reset_index()
+        interFitness = pd.concat([interFitness, sumFitness]).reset_index(drop=True)
+
+    reps = len(pd.read_sql_query("SELECT run_id \
+                    FROM runs WHERE combo_id = {0}".format(comboID), conLoc)['run_id'])
+    meanLA2 = intraFitness.merge(interFitness,on=['t','run_id'])
+    meanLA2['LA'] = meanLA2['vfitness'] - 1/(reps-1)*meanLA2['interFitness']
+    meanLA2['interFitness'] = 1/(reps-1)*meanLA2['interFitness']
+    meanLA2 = meanLA2.groupby(['t'])\
+                    .agg(mean=('LA', 'mean'),std=('LA','std'),
+                         meanIntra=('vfitness', 'mean'),stdIntra=('vfitness','std'), 
+                         meanInter=('interFitness', 'mean'),stdInter=('interFitness','std'),
+                         n=('LA','size')).reset_index()
+    meanLAthresh2 = meanLA2[meanLA2.n >= nThresh]
+    meanTAthresh2 = meanTA2[meanTA2.n >= nThresh]
+    virus_total = pd.read_sql_query("SELECT run_id, t, viral_abundance FROM summary \
+                            WHERE run_id in ({}) AND viral_abundance > 0"
+                            .format(', '.join(map(str, runIDs))), conSim)\
+    .rename(columns={"viral_abundance": "vtotal"})
+    vstats2 = virus_total.groupby(['t'])\
+    .agg(exp_vtotal=('vtotal', 'mean'), std_vtotal=('vtotal', 'std'), n=('vtotal', 'size'))\
+    .reset_index()
+    vstats2 = vstats2[vstats2.n >= nThresh]
+    #####
+    #####
+    ####
+    fig, ax = plt.subplots(2, 2, sharex=True,
+                        figsize=(5, 5))
+    axes = [ax[0,0], ax[0,1], ax[1,0], ax[1,1], ax[0,0].twinx(), ax[0,1].twinx(), ax[1,0].twinx(), ax[1,1].twinx()]
+    axes[1].sharey(axes[0])
+    axes[3].sharey(axes[2])
+    axes[5].sharey(axes[4])
+    axes[6].sharey(axes[2])
+    axes[7].sharey(axes[3])
+    a = 0.1
+    axes[0].fill_between(vstats['t'],
+                    vstats['exp_vtotal'] -
+                    vstats['std_vtotal'],
+                    vstats['exp_vtotal'] +
+                    vstats['std_vtotal'], color='grey', alpha=0.1)
+    axes[0].plot(vstats['t'],
+            vstats['exp_vtotal'],
+            linewidth=2, color='grey', label='Viral Abund.', linestyle='solid', alpha=0.75)
+    axes[0].yaxis.set_label_position("right")
+    axes[0].yaxis.tick_right()
+    axes[1].fill_between(vstats2['t'],
+                    vstats2['exp_vtotal'] -
+                    vstats2['std_vtotal'],
+                    vstats2['exp_vtotal'] +
+                    vstats2['std_vtotal'], color='grey', alpha=0.1)
+    axes[1].plot(vstats2['t'],
+            vstats2['exp_vtotal'],
+            linewidth=2, color='grey', linestyle='solid', alpha=0.75)
+    for i in [0,1]:
+        axes[i].yaxis.set_label_position("right")
+        axes[i].yaxis.tick_right()
+        lim = axes[i].get_ylim()
+        axes[i].set_ylim(0, lim[1])
+    # axes[1].set_yticklabels([])
+    axes[0].set_ylabel('')
+    axes[1].set_ylabel(ylabel='Mean Viral Abundance', rotation=270, labelpad=20,fontsize=15)
+    axes[4].fill_between(meanLAthresh['t'], meanLAthresh['meanIntra']-meanLAthresh['stdIntra'],
+                        meanLAthresh['meanIntra'] + meanLAthresh['stdIntra'], color='darkorange', alpha=a)
+    axes[4].plot(meanLAthresh['t'], meanLAthresh['meanIntra'],
+                 linewidth=1.5, color='darkorange', label = r'Local, $\sigma = 0$')
+    # axes[0].fill_between(meanLAthresh['t'], meanLAthresh['meanInter']-meanLAthresh['stdInter'],
+    #                     meanLAthresh['meanInter'] + meanLAthresh['stdInter'], color='orange', alpha=a)
+    # axes[0].plot(meanLAthresh['t'], meanLAthresh['meanInter'],
+    #              linewidth=1.5, color='orange', label = r'Allo., $\sigma = 0$')
+    axes[5].fill_between(meanLAthresh2['t'], meanLAthresh2['meanIntra']-meanLAthresh2['stdIntra'],
+                        meanLAthresh2['meanIntra'] + meanLAthresh2['stdIntra'], color='darkblue', alpha=a)
+    axes[5].plot(meanLAthresh2['t'], meanLAthresh2['meanIntra'],
+                 linewidth=1.5, color='darkblue', label = r'Local, $\sigma = 3$')
+    axes[4].yaxis.tick_left()
+    axes[5].yaxis.tick_left()
+    axes[4].set_ylabel(ylabel='Mean Local Viral Fitness',labelpad=15,fontsize=15)
+    axes[4].yaxis.set_label_position("left")
+    axes[5].yaxis.set_label_position("left")
+    # axes[5].set_yticklabels([])
+    lim = axes[4].get_ylim()
+    axes[4].set_ylim(0, lim[1])
+    lim = axes[5].get_ylim()
+    axes[5].set_ylim(0, lim[1])
+    #
+    axes[2].fill_between(meanLAthresh['t'], meanLAthresh['meanIntra']-meanLAthresh['stdIntra'],
+                        meanLAthresh['meanIntra'] + meanLAthresh['stdIntra'], color='darkorange', alpha=a)
+    axes[2].plot(meanLAthresh['t'], meanLAthresh['meanIntra'],
+                 linewidth=1.5, color='darkorange', label = r'Local, $\sigma = 0$')
+    # axes[0].fill_between(meanLAthresh['t'], meanLAthresh['meanInter']-meanLAthresh['stdInter'],
+    #                     meanLAthresh['meanInter'] + meanLAthresh['stdInter'], color='orange', alpha=a)
+    # axes[0].plot(meanLAthresh['t'], meanLAthresh['meanInter'],
+    #              linewidth=1.5, color='orange', label = r'Allo., $\sigma = 0$')
+    axes[3].fill_between(meanLAthresh2['t'], meanLAthresh2['meanIntra']-meanLAthresh2['stdIntra'],
+                        meanLAthresh2['meanIntra'] + meanLAthresh2['stdIntra'], color='darkblue', alpha=a)
+    axes[3].plot(meanLAthresh2['t'], meanLAthresh2['meanIntra'],
+                 linewidth=1.5, color='darkblue', label = r'Local, $\sigma = 3$')
+    # axes[1].set_yticklabels([])
+    axes[6].fill_between(meanLAthresh['t'], meanLAthresh['meanInter']-meanLAthresh['stdInter'],
+                    meanLAthresh['meanInter'] + meanLAthresh['stdInter'], color='darkred', alpha=a)
+    axes[6].plot(meanLAthresh['t'], meanLAthresh['meanInter'],
+                 linewidth=1.5, color='darkred', label = r'Non-local, $\sigma = 0$')
+    # axes[0].fill_between(meanLAthresh['t'], meanLAthresh['meanInter']-meanLAthresh['stdInter'],
+    #                     meanLAthresh['meanInter'] + meanLAthresh['stdInter'], color='orange', alpha=a)
+    # axes[0].plot(meanLAthresh['t'], meanLAthresh['meanInter'],
+    #              linewidth=1.5, color='orange', label = r'Allo., $\sigma = 0$')
+    axes[7].fill_between(meanLAthresh2['t'], meanLAthresh2['meanInter']-meanLAthresh2['stdInter'],
+                        meanLAthresh2['meanInter'] + meanLAthresh2['stdInter'], color='darkgreen', alpha=a)
+    axes[7].plot(meanLAthresh2['t'], meanLAthresh2['meanInter'],
+                 linewidth=1.5, color='darkgreen', label = r'Non-local, $\sigma = 3$')
+    # axes[6].yaxis.tick_left()
+    
+    axes[2].set_ylabel(ylabel='Mean Viral Fitness',labelpad=15,fontsize=15)
+    axes[2].yaxis.tick_left()
+    axes[2].yaxis.set_label_position("left")
+    axes[6].tick_params(axis='y', labelcolor='w', top=False,
+                    bottom=False, left=False, right=False)
+    axes[7].tick_params(axis='y', labelcolor='w', top=False,
+                    bottom=False, left=False, right=False)
+    ###
+    handles = []
+    labels = []
+    handle, label = axes[0].get_legend_handles_labels()
+    handles.extend(handle)
+    labels.extend(label)
+    handle, label = axes[4].get_legend_handles_labels()
+    handles.extend(handle)
+    labels.extend(label)
+    handle, label = axes[5].get_legend_handles_labels()
+    handles.extend(handle)
+    labels.extend(label)
+    axes[0].legend(handles, labels, loc='upper right', fontsize=15)
+    handles = []
+    labels = []
+    handle, label = axes[2].get_legend_handles_labels()
+    handles.extend(handle)
+    labels.extend(label)
+    handle, label = axes[3].get_legend_handles_labels()
+    handles.extend(handle)
+    labels.extend(label)
+    handle, label = axes[6].get_legend_handles_labels()
+    handles.extend(handle)
+    labels.extend(label)
+    handle, label = axes[7].get_legend_handles_labels()
+    handles.extend(handle)
+    labels.extend(label)
+    axes[2].legend(handles, labels, loc='upper right', fontsize=15)
+    #
+    axes[0].yaxis.get_offset_text().set_fontsize(15)
+    axes[1].yaxis.get_offset_text().set_fontsize(15)
+    axes[0].xaxis.set_minor_locator(ticker.MultipleLocator(50)) 
+    axes[1].xaxis.set_minor_locator(ticker.MultipleLocator(50)) 
+    axes[2].set_xlabel(xlabel = 'Time t',fontsize=15,labelpad=15)
+    axes[3].set_xlabel(xlabel = 'Time t',fontsize=15,labelpad=15)
+    axes[0].tick_params(axis='x', labelsize=15)
+    axes[0].tick_params(axis='y', labelsize=15)
+    axes[1].tick_params(axis='x', labelsize=15)
+    axes[1].tick_params(axis='y', labelsize=15)
+    axes[4].tick_params(axis='x', labelsize=15)
+    axes[4].tick_params(axis='y', labelsize=15)
+    axes[5].tick_params(axis='x', labelsize=15)
+    axes[5].tick_params(axis='y', labelsize=15)
+    axes[2].tick_params(axis='x', labelsize=15)
+    axes[2].tick_params(axis='y', labelsize=15)
+    axes[3].tick_params(axis='x', labelsize=15)
+    axes[3].tick_params(axis='y', labelsize=15)
+    axes[6].tick_params(axis='x', labelsize=15)
+    axes[6].tick_params(axis='y', labelsize=15)
+    axes[7].tick_params(axis='x', labelsize=15)
+    axes[7].tick_params(axis='y', labelsize=15)
+    # fig.tight_layout(pad=5)
+    plt.show()
+
+
+
 
 
 

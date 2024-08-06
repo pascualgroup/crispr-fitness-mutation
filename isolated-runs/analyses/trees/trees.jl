@@ -21,6 +21,7 @@ dbOutputPath = joinpath("trees_output.sqlite") # cluster
 # dbSimPath = joinpath("/Users/armun/Dropbox/Current/Projects/microbe-virus-crispr/stochastic-crispr",
 #                             "runID146-c5-r6.sqlite") # local
 # dbSimPath = joinpath("/Volumes/Yadgah/crispr-sweep-7-2-2022/isolates/runID3297-c66-r47/runID3297-c66-r47.sqlite")
+# dbSimPath = joinpath("/Volumes/Yadgah", "sylvain-martin-collab/12_MOI3/isolates/runID4209-c15-r9/runID4209-c15-r9.sqlite") # local 
 # dbOutputPath = joinpath("/Volumes/Yadgah/trees_output.sqlite") # local
 # dbOutputPath = joinpath("/Users/armun/Dropbox/Current/Projects/microbe-virus-crispr/stochastic-crispr/trees_output.sqlite") # local
 ##
@@ -60,6 +61,7 @@ dbTemp = SQLite.DB()
 # execute(dbTemp, "CREATE TABLE vabundance (t REAL, vstrain_id INTEGER, abundance INTEGER)")
 execute(dbTemp, "CREATE TABLE bstrains (t_creation REAL, bstrain_id INTEGER, parent_bstrain_id INTEGER, infecting_vstrain_id INTEGER)")
 execute(dbTemp, "CREATE TABLE vstrains (t_creation REAL, vstrain_id INTEGER, parent_vstrain_id INTEGER, infected_bstrain_id INTEGER)")
+execute(dbTemp, "CREATE TABLE bgrowthrates (bstrain_id INTEGER, growth_rate REAL)")
 execute(dbTemp, "CREATE TABLE bextinctions (bstrain_id INTEGER, t_extinction REAL)")
 execute(dbTemp, "CREATE TABLE vextinctions (vstrain_id INTEGER, t_extinction REAL)")
 execute(dbTemp, "CREATE TABLE babundance (t REAL, bstrain_id INTEGER, abundance INTEGER)")
@@ -76,6 +78,9 @@ FROM dbSim.bstrains WHERE run_id = $(run_id);")
 execute(dbTemp,"INSERT INTO vstrains (t_creation, vstrain_id,parent_vstrain_id,infected_bstrain_id)
 SELECT t_creation, vstrain_id,parent_vstrain_id,infected_bstrain_id
 FROM dbSim.vstrains WHERE run_id = $(run_id);")
+execute(dbTemp,"INSERT INTO bgrowthrates (bstrain_id, growth_rate)
+SELECT bstrain_id, growth_rate
+FROM dbSim.bgrowthrates WHERE run_id = $(run_id);")
 execute(dbTemp,"INSERT INTO bextinctions (bstrain_id, t_extinction)
 SELECT bstrain_id, t_extinction
 FROM dbSim.bextinctions WHERE run_id = $(run_id);")
@@ -94,6 +99,7 @@ execute(dbTemp, "CREATE INDEX babundance_index ON babundance (t,bstrain_id,abund
 execute(dbTemp, "CREATE INDEX vabundance_index ON vabundance (t,vstrain_id, abundance)")
 execute(dbTemp, "CREATE INDEX bstrains_index ON bstrains (t_creation, bstrain_id,parent_bstrain_id,infecting_vstrain_id)")
 execute(dbTemp, "CREATE INDEX vstrains_index ON vstrains (t_creation, vstrain_id,parent_vstrain_id,infected_bstrain_id)")
+execute(dbTemp, "CREATE INDEX bgrowth_index ON bgrowthrates (bstrain_id)")
 execute(dbTemp, "COMMIT")
 
 
@@ -136,6 +142,8 @@ function orderTreeStrains(strainType::String)
         s = "b"
         initialStrains =[strain_id for (strain_id,) in execute(dbTemp,"SELECT $(s)strain_id
         FROM $(s)strains WHERE parent_$(s)strain_id = 0 ORDER BY $(s)strain_id")]
+        initialStrainsGrowthOrdered =[strain_id for (strain_id,) in execute(dbTemp,"SELECT $(s)strain_id
+        FROM $(s)growthrates WHERE $(s)strain_id in ($(join(initialStrains,", "))) ORDER BY growth_rate DESC")]
         strainTreeOrder = DataFrame(bstrain_id = Int64[0,1], tree_bstrain_id = Int64[0,1])
         lineages = Dict{Int64,Array{Int64,1}}()
         for (strain_id,) in execute(dbTemp,"SELECT DISTINCT $(s)strain_id FROM $(s)strains
@@ -143,16 +151,18 @@ function orderTreeStrains(strainType::String)
             lineages[strain_id] = searchLineage(strain_id,strainType)
         end
         initialtreestrainIDs = Int64[0, 1]
-        for initialStrain in initialStrains
-            if initialStrain == 1
-                continue
-            end
-            newTreeID = initialtreestrainIDs[initialStrain] + length(lineages[initialStrain-1])
+        # for initialStrain in initialStrains
+        for strainIDX in collect(2:1:length(initialStrainsGrowthOrdered))
+            # if initialStrain == 1
+            #     continue
+            # end
+            strainBefore = initialStrainsGrowthOrdered[strainIDX-1]
+            newTreeID = initialtreestrainIDs[strainIDX] + length(lineages[strainBefore])
             push!(initialtreestrainIDs,newTreeID)
         end
-        strainTreeOrder = DataFrame(bstrain_id = Int64[0,initialStrains...],
+        strainTreeOrder = DataFrame(bstrain_id = Int64[0,initialStrainsGrowthOrdered...],
                                         tree_bstrain_id = initialtreestrainIDs)
-        for initialStrain in initialStrains
+        for initialStrain in initialStrainsGrowthOrdered
             MRCA_ids = [MRCA_id for (MRCA_id,) in execute(dbTemp,"SELECT $(s)strain_id
             FROM $(s)strains WHERE parent_$(s)strain_id = $(initialStrain) ORDER BY $(s)strain_id")]
             while length(MRCA_ids) > 0
@@ -502,22 +512,24 @@ findExtinctionTimes("virus")
 function createindices()
     println("(Creating run_id indices...)")
     db = SQLite.DB(dbOutputPath)
-    execute(db, "BEGIN TRANSACTION")
-    for (table_name,) in execute(
+    table_names = [table_name for (table_name,) in execute(
         db, "SELECT name FROM sqlite_schema
-        WHERE type='table' ORDER BY name;")
+        WHERE type='table' ORDER BY name;")]
+    # execute(db, "BEGIN TRANSACTION")
+    dbOutput = SQLite.DB(dbOutputPath)
+    for table_name in table_names
         # cols = [info.name for info in execute(db,"PRAGMA table_info($(table_name))")]
         if in(table_name,["tree_bstrain_order"])
-            execute(db, "CREATE INDEX $(table_name)_index ON $(table_name) (bstrain_id)")
+            execute(dbOutput, "CREATE INDEX $(table_name)_index ON $(table_name) (bstrain_id)")
         end
         if in(table_name,["tree_vstrain_order"])
-            execute(db, "CREATE INDEX $(table_name)_index ON $(table_name) (vstrain_id)")
+            execute(dbOutput, "CREATE INDEX $(table_name)_index ON $(table_name) (vstrain_id)")
         end
         if in(table_name,["tree_babundance","tree_vabundance"])
-            execute(db, "CREATE INDEX $(table_name)_index ON $(table_name) (t)")
+            execute(dbOutput, "CREATE INDEX $(table_name)_index ON $(table_name) (t)")
         end
     end
-    execute(db, "COMMIT")
+    # execute(dbSim, "COMMIT")
 end
 createindices()
 

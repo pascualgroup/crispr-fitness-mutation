@@ -17,6 +17,7 @@ Base.show(io::IO, y::UInt32) = Base.print(io, y)
 SCRIPT_PATH = abspath(dirname(PROGRAM_FILE))
 
 include(joinpath(SCRIPT_PATH,"setup.jl"))
+include(joinpath(SCRIPT_PATH,"communityInitialization.jl"))
 include(joinpath(SCRIPT_PATH,"structures.jl"))
 include(joinpath(SCRIPT_PATH,"output.jl"))
 include(joinpath(SCRIPT_PATH,"util.jl"))
@@ -38,20 +39,20 @@ const P = let
     Params(; d_symb...)
 end
 
-dbICPath = joinpath(SCRIPT_PATH,"..","..","initial-conditions.sqlite") # cluster
-if isfile(dbICPath)
-    initialConditionsDB = DB(dbICPath)
-else
-    initialConditionsDB = Nothing
-end
+# dbICPath = joinpath(SCRIPT_PATH,"..","..","initial-conditions.sqlite") # cluster
+# if isfile(dbICPath)
+#     initialConditionsDB = DB(dbICPath)
+# else
+#     initialConditionsDB = Nothing
+# end
 
 # Run simulation
-function main(P::Params,initialConditionsDB)
-    sim = Simulation(P,initialConditionsDB)
+function main(P::Params)
+    sim = Simulation(P)
     simulate(sim)
 end
 
 # Record start time
 start_time = now()
 
-main(P,initialConditionsDB)
+main(P)

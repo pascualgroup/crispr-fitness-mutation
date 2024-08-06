@@ -40,47 +40,53 @@ include("src/setup.jl")
 using SQLite
 
 SCRIPT_PATH = abspath(dirname(PROGRAM_FILE))
-ROOT_RUN_SCRIPT = joinpath(SCRIPT_PATH, "src","make-plots.py")
-ROOT_RUNMANY_SCRIPT = joinpath(SCRIPT_PATH,"src", "runmany.jl")
+# ROOT_PATH = joinpath(SCRIPT_PATH)
+ROOT_PATH = joinpath("/scratch/cgsb/pascual/armun/crispr/vary-fitness/20_MOI3/simulation")
+# dbSimPath = joinpath(SCRIPT_PATH, "..", "simulation", "sweep_db.sqlite")
+dbSimPath = joinpath("/Volumes/Yadgah/sylvain-martin-collab/20_MOI3/sweep_db.sqlite")
+ROOT_RUN_SCRIPT = joinpath(ROOT_PATH, "src","make-plots.py")
+ROOT_RUNMANY_SCRIPT = joinpath(ROOT_PATH,"src", "runmany.jl")
 cd(SCRIPT_PATH)
 
 # Number of SLURM jobs to generate
-const N_JOBS_MAX = 50
-const N_CORES_PER_JOB_MAX = 28 # Half a node, easier to get scheduled than a whole one
-const mem_per_cpu = 2000 # in MB 1000MB = 1 GB
+const N_JOBS_MAX = 500
+const N_PROCESSES = 15 # Half a node, easier to get scheduled than a whole one
+const N_CORES_PER_JOB_MAX = 15 # Half a node, easier to get scheduled than a whole one
+const mem_per_cpu = 8000 # in MB 1000MB = 1 GB
 
 
 
 function main()
     # Root run directory
-    if ispath(joinpath(SCRIPT_PATH,"plots"))
-        error("`/simulation/plots` already exists; please delete first.")
-    end
+    # if ispath(joinpath(SCRIPT_PATH,"plots"))
+    #     error("`/simulation/plots` already exists; please delete first.")
+    # end
 
-    if !ispath(joinpath(SCRIPT_PATH,"runs"))
-        error("`/simulation/runs` is missing; please run generate-sweep.jl first, then simulate time series.")
-    end
+    # if !ispath(joinpath(SCRIPT_PATH,"runs"))
+    #     error("`/simulation/runs` is missing; please run generate-sweep.jl first, then simulate time series.")
+    # end
 
-    if !isfile(joinpath(SCRIPT_PATH,"sweep_db.sqlite"))
-        error("`sweep_db.sqlite` is missing; please run generate-sweep.jl first, then simulate time series.")
-    end
+    # if !isfile(joinpath(SCRIPT_PATH,"sweep_db.sqlite"))
+    #     error("`sweep_db.sqlite` is missing; please run generate-sweep.jl first, then simulate time series.")
+    # end
 
-    # Root job directory
-    if !ispath(joinpath(SCRIPT_PATH,"jobs"))
-        @info "Note that `/simulation/jobs` is missing."
-    end
+    # # Root job directory
+    # if !ispath(joinpath(SCRIPT_PATH,"jobs"))
+    #     @info "Note that `/simulation/jobs` is missing."
+    # end
 
-    db = SQLite.DB("sweep_db.sqlite")
+    dbSim = SQLite.DB(dbSimPath)
+    db = SQLite.DB(joinpath("plots_db.sqlite"))
     execute(db, "DROP TABLE IF EXISTS plot_jobs")
     execute(db, "CREATE TABLE plot_jobs (job_id INTEGER, job_dir TEXT)")
     execute(db, "DROP TABLE IF EXISTS plot_job_runs")
     execute(db, "CREATE TABLE plot_job_runs (job_id INTEGER, run_id INTEGER, run_dir TEXT)")
 
-    numSubmits = generate_plot_runs(db)
-    generate_plot_jobs(db,numSubmits)
+    numSubmits = generate_plot_runs(dbSim,db)
+    generate_plot_jobs(dbSim,db, numSubmits)
 end
 
-function generate_plot_runs(db::DB) # This function generates the directories
+function generate_plot_runs(dbSim::DB,db::DB) # This function generates the directories
     # for the individual parameter sets and corresponding replicates. It also
     # generates shell scripts for each run and corresponding parameter file.
 
@@ -88,18 +94,19 @@ function generate_plot_runs(db::DB) # This function generates the directories
     # `plots/c<combo_id>/r<replicate>` for each one.
     run_count = 0
     println("Processing plot script for each run")
-    for (run_id, combo_id, replicate) in execute(db, "SELECT run_id,combo_id,replicate FROM runs ORDER BY combo_id,replicate")
+    for (run_id, combo_id, replicate) in execute(dbSim, "SELECT run_id,combo_id,replicate FROM runs ORDER BY combo_id,replicate")
         #println("Processing plot script for combination $(combo_id)/replicate $(replicate)"
         #) # local
         # if run_id in [1, 101, 201, 7, 107, 207, 8, 108, 208]
         #     println("...skipping run_id $(run_id)...")
         #     continue
         # end
-        run_dir = joinpath(SCRIPT_PATH,"runs", "c$(combo_id)", "r$(replicate)")
-        @assert ispath(run_dir)
+        # run_dir = joinpath(SCRIPT_PATH,"runs", "c$(combo_id)", "r$(replicate)")
+        # @assert ispath(run_dir)
+        run_dir = joinpath(SCRIPT_PATH, "plots", "runs", "c$(combo_id)", "r$(replicate)")
 
-        plot_dir = joinpath(SCRIPT_PATH,"plots", "c$(combo_id)", "r$(replicate)")
-        @assert !ispath(plot_dir)
+        plot_dir = joinpath(SCRIPT_PATH,"plots", "runs","c$(combo_id)", "r$(replicate)")
+        # @assert !ispath(plot_dir)
         mkpath(plot_dir)
 
         argString = map(x->string("$(x) "), ARGS) # the space after $(x) is important
@@ -110,27 +117,27 @@ function generate_plot_runs(db::DB) # This function generates the directories
             print(f, """
             #!/bin/sh
             cd `dirname \$0`
-            module load python/anaconda-2021.05
+            module load python/intel/3.8.6
             python $(ROOT_RUN_SCRIPT) $(run_id) $(argString...) &> plot_output.txt
             """)
         end
         run(`chmod +x $(run_script)`)
         run_count += 1
     end
-    return numSubmits = Int64(ceil(run_count/(N_JOBS_MAX*N_CORES_PER_JOB_MAX)))
+    return numSubmits = Int64(ceil(run_count/(N_JOBS_MAX*N_PROCESSES)))
 end
 
-function generate_plot_jobs(db::DB,numSubmits::Int64)
+function generate_plot_jobs(dbSim::DB,db::DB,numSubmits::Int64)
     println("Assigning plot runs to plot jobs...")
 
     # Assign runs to jobs (round-robin)
     job_id = 1
-    n_cores_count = 0
+    n_cores = 0
 
     execute(db, "BEGIN TRANSACTION")
 
-    for (run_id, run_dir) in execute(db, "SELECT run_id, run_dir FROM runs ORDER BY combo_id, replicate")
-        execute(db, "INSERT INTO plot_job_runs VALUES (?,?,?)", (job_id, run_id, run_dir))
+    for (run_id, run_dir) in execute(dbSim, "SELECT run_id, run_dir FROM runs ORDER BY combo_id, replicate")
+        execute(db, "INSERT INTO plot_job_runs VALUES (?,?,?)", (job_id, run_id, joinpath("plots",run_dir)))
         # Mod-increment job ID
         job_id = mod(job_id,N_JOBS_MAX*numSubmits) + 1
     end
@@ -144,31 +151,32 @@ function generate_plot_jobs(db::DB,numSubmits::Int64)
         """)
     end
 
-    for (job_id,) in execute(db, "SELECT DISTINCT job_id FROM job_runs ORDER BY job_id")
+    for (job_id,) in execute(db, "SELECT DISTINCT job_id FROM plot_job_runs ORDER BY job_id")
 
-        job_dir = joinpath("jobs", "$(job_id)")
+        job_dir = joinpath("plots","jobs", "$(job_id)")
+        mkpath(job_dir)
         @assert ispath(job_dir)
 
         # Get all run directories for this job
         run_dirs = [run_dir for (run_dir,) in execute(db,
             """
-            SELECT run_dir FROM job_runs, runs
-            WHERE job_runs.job_id = ?
-            AND runs.run_id = job_runs.run_id
+            SELECT run_dir FROM plot_job_runs
+            WHERE job_id = ?
             """,
             (job_id,)
         )]
 
-        n_cores = min(length(run_dirs), N_CORES_PER_JOB_MAX)
 
-        if n_cores > n_cores_count
-            n_cores_count = n_cores
+        if N_CORES_PER_JOB_MAX == nothing
+            n_cores = min(length(run_dirs), N_PROCESSES)
+        else
+            n_cores = N_CORES_PER_JOB_MAX
         end
 
         # Write out list of runs
         open(joinpath(job_dir, "plot_runs.txt"), "w") do f
             for run_dir in run_dirs
-                run_script = joinpath(SCRIPT_PATH, run_dir, "runplotmaker.sh")
+                run_script = joinpath(ROOT_PATH, run_dir, "runplotmaker.sh")
                 println(f, run_script)
             end
         end
@@ -178,19 +186,19 @@ function generate_plot_jobs(db::DB,numSubmits::Int64)
         open(job_sbatch, "w") do f
             print(f, """
             #!/bin/sh
-            #SBATCH --account=pi-pascualmm
-            #SBATCH --partition=broadwl
-            #SBATCH --job-name=crispr-plots-$(job_id)
-            #SBATCH --tasks=1
-            #SBATCH --cpus-per-task=$(n_cores)
+            #SBATCH --nodes=1
+            #SBATCH --ntasks-per-node=$(n_cores)
+            #SBATCH --cpus-per-task=1
+            #SBATCH --job-name=$(job_id)plots
             #SBATCH --mem-per-cpu=$(mem_per_cpu)m
-            #SBATCH --time=1-12:00:00
-            #SBATCH --chdir=$(joinpath(SCRIPT_PATH, job_dir))
-            #SBATCH --output=plot_output.txt
-            #SBATCH --mail-user=armun@uchicago.edu
-            # Uncomment this to use the Midway-provided Julia:
-            module load julia
-            julia $(ROOT_RUNMANY_SCRIPT) $(n_cores) plot_runs.txt
+            #SBATCH --time=01:55:00
+            #SBATCH --chdir=$(joinpath(ROOT_PATH, job_dir))
+            #SBATCH --output=output.txt
+            #SBATCH --mail-type=END,FAIL
+            #SBATCH --mail-user=al8784@nyu.edu
+            module purge
+            module load julia/1.6.1
+            ~/julia/my-julia $(ROOT_RUNMANY_SCRIPT) $(n_cores) plot_runs.txt
             """) # runs.txt is for parallel processing
         end
         run(`chmod +x $(job_sbatch)`) # Make run script executable (for local testing)
@@ -207,8 +215,8 @@ function generate_plot_jobs(db::DB,numSubmits::Int64)
     @info "
     Sweep will be submitted via $(numSubmits) `plot_submit_jobs.sh` script(s).
     Each `plot_submit_jobs.sh` script submits $(N_JOBS_MAX) jobs.
-    Each job will use $(n_cores_count) cpus (cores) at most, where each cpu will use $(mem_per_cpu/1000)GB.
-    Each job therefore will use at most $(n_cores_count*mem_per_cpu/1000)GB of memory in total.
+    Each job will use $(n_cores) cpus (cores) at most, where each cpu will use $(mem_per_cpu/1000)GB.
+    Each job therefore will use at most $(n_cores*mem_per_cpu/1000)GB of memory in total.
     "
 end
 

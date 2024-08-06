@@ -40,20 +40,22 @@ include("src/structures.jl")
 include("src/util.jl")
 
 using SQLite
+using DataFrames
 
 SCRIPT_PATH = abspath(dirname(PROGRAM_FILE))
-ROOT_PATH = joinpath(SCRIPT_PATH, "src")
-ROOT_RUN_SCRIPT = joinpath(ROOT_PATH, "main-sweep.jl")
-ROOT_RUNMANY_SCRIPT = joinpath(ROOT_PATH, "runmany.jl")
+ROOT_PATH = joinpath("/scratch/al8784/26_MOI3/simulation")
+ROOT_RUN_SCRIPT = joinpath(ROOT_PATH, "src", "main-sweep.jl")
+ROOT_RUNMANY_SCRIPT = joinpath(ROOT_PATH, "src", "runmany.jl")
 cd(SCRIPT_PATH)
 
 # Number of replicates for each parameter combination
-const N_REPLICATES = 100
+const N_REPLICATES = 400
 
 # Number of SLURM jobs to generate
-const N_JOBS_MAX = 50
-const N_CORES_PER_JOB_MAX = 28 # Half a node, easier to get scheduled than a whole one
-const mem_per_cpu = 2000 # in MB 100MB = 1 GB
+const N_JOBS_MAX = 1000
+const N_PROCESSES = 18 # Half a node (14) is easier to get scheduled than a whole one
+const N_CORES_PER_JOB_MAX = 18
+const mem_per_cpu = 6000 # in MB 100MB = 1 GB
 
 db = SQLite.DB(joinpath(SCRIPT_PATH,"sweep_db.sqlite")) # the function of this database
 # is to log run and job ids of individual simulation directory names
@@ -61,10 +63,8 @@ json_str = read(joinpath(SCRIPT_PATH,"..","sweep-parameters.json"), String)
 paramStringTrunc = JSON.parse(json_str)
 # Deleting any key will designate the parameter as a base (unchanging parameter)
 # with the exception of the seed, which is generated for every individual replicate
-delete!(paramStringTrunc,"rng_seed")
-delete!(paramStringTrunc,"enable_output")
-delete!(paramStringTrunc,"directional")
-delete!(paramStringTrunc, "random_initial_alleles")
+delete!(paramStringTrunc, "rng_seed")
+delete!(paramStringTrunc, "enable_output")
 
 function main()
     # Root run directory
@@ -110,26 +110,58 @@ function generate_runs(db::DB) # This function generates the directories
     base_params = init_params(paramSymb)
     validate(base_params)
 
-    execute(db, "BEGIN TRANSACTION")
+    # execute(db, "BEGIN TRANSACTION")
     execute(db, "INSERT INTO meta VALUES (?, ?)", ("base_params", pretty_json(base_params)))
+    # execute(db, "COMMIT")
 
     paramKeys = [k for (k,) in paramStringTrunc]
-    paramVals = [v for (nothing,v) in paramStringTrunc]
+    paramVals = [v for (nothing, v) in paramStringTrunc]
     combos = collect(Base.product(paramVals...))
-
+    
+    if paramStringTrunc["auxiliary"] != false
+        if in(3, paramStringTrunc["init_bcomm_function"]) && length(paramStringTrunc["auxiliary"][1]) != 3
+            error("you've chosen the 3rd community initialization function. make sure auxiliary parameter is a vector [/path/to,run_id,time]")
+        end
+        if in(3, paramStringTrunc["init_bcomm_function"]) && typeof(paramStringTrunc["auxiliary"][1][1]) != String
+            error("you've chosen the 3rd community initialization function. make sure auxiliary parameter is a vector [/path/to,run_id,time]")
+        end
+        if in(2, paramStringTrunc["init_bcomm_function"]) && paramStringTrunc["n_bstrains"][1] != paramStringTrunc["n_vstrains"][1]
+            error("you've chosen the 2nd community initialization function. make sure number of initial microbe strains equals viral strains")
+        end
+        auxDF = DataFrame(parameter_id=1:length(paramStringTrunc["auxiliary"]))
+        if length(unique(map(x->length(x),paramStringTrunc["auxiliary"]))) != 1
+            error("auxiliary parameters must be of same vector lengths")
+        end
+        for i in 1:length(paramStringTrunc["auxiliary"][1])
+            auxDF[!, "sub_parameter_$(i)"] = map(x -> paramStringTrunc["auxiliary"][x][i],
+                                                collect(1:length(paramStringTrunc["auxiliary"])))
+        end
+        for i in 1:size(auxDF)[1]
+            paramStringTrunc["auxiliary"][i] = i
+        end
+        auxDF |> SQLite.load!(db, "auxiliary_parameters", ifnotexists=true)
+    end
+    
+    combosMod = let
+        paramValsMod = [v for (nothing, v) in paramStringTrunc] 
+        collect(Base.product(paramValsMod...))
+    end
+    
+    # execute(db, "BEGIN TRANSACTION")
     run_id = 1
-
-    for combo_id in 1:length(combos)
+    execute(db, "BEGIN TRANSACTION")
+    for combo_id in collect(1:length(combos))
         println("Processing parameter combination $(combo_id)")
         paramSpace = ["?" for i in 1:(length(paramVals)+1)]
         paramSpaces = join(paramSpace,", ")
         execute(db, "INSERT INTO param_combos VALUES ($(paramSpaces))",
-        (combo_id,combos[combo_id]...)
+        (combo_id,combosMod[combo_id]...)
         )
 
         paramSymbTrunc = Dict(map(Symbol,paramKeys).=>combos[combo_id])
 
         for replicate in 1:N_REPLICATES
+            # t0 = now()
             rng_seed = rand(seed_rng, 1:typemax(Int64))
             params = Params(base_params;rng_seed = rng_seed,
                         paramSymbTrunc...
@@ -138,52 +170,52 @@ function generate_runs(db::DB) # This function generates the directories
             run_dir = joinpath("runs", "c$(combo_id)", "r$(replicate)")
             @assert !ispath(run_dir)
             mkpath(run_dir)
-
+            # tp = now()
             # Generate parameters file
             params_json = pretty_json(params)
             open(joinpath(run_dir, "parameters.json"), "w") do f
                 println(f, params_json)
             end
+            # println("$(replicate):json takes $(Dates.value(tp - t0) / 1000.0)")
 
+            # tscript = now()
             # Generate shell script to perform a single run
             run_script = joinpath(run_dir, "run.sh")
             open(run_script, "w") do f
                 print(f, """
                 #!/bin/sh
                 cd `dirname \$0`
-                julia $(ROOT_RUN_SCRIPT) parameters.json &> output.txt
+                /share/apps/julia/1.6.1/bin/julia $(ROOT_RUN_SCRIPT) parameters.json &> output.txt
                 """)
             end
+            # println("$(replicate):script takes $(Dates.value(tscript - t0) / 1000.0)")
             run(`chmod +x $(run_script)`) # Make run script executable
-            # WHY NOT 777 but rather +x? TEST THIS ON MIDWAY
 
             # Save all run info (including redundant stuff for reference) into DB
             execute(db, "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?)", (run_id, combo_id, replicate, rng_seed, run_dir, params_json))
-
             run_id += 1
         end
     end
     execute(db, "COMMIT")
+    # execute(db, "COMMIT")
     return Int64(length(combos))
 end
 
 function generate_jobs(db::DB,numCombos::Int64)
     println("Assigning runs to jobs...")
 
-    numSubmits = Int64(ceil(numCombos*N_REPLICATES/(N_JOBS_MAX*N_CORES_PER_JOB_MAX)))
+    numSubmits = Int64(ceil(numCombos*N_REPLICATES/(N_JOBS_MAX*N_PROCESSES)))
 
     # Assign runs to jobs (round-robin)
     job_id = 1
     n_cores_count = 0
 
+    # execute(db, "BEGIN TRANSACTION")
     execute(db, "BEGIN TRANSACTION")
-
-    for (run_id, run_dir) in execute(db, "SELECT run_id, run_dir FROM runs ORDER BY combo_id, replicate")
+    for (run_id,) in execute(db, "SELECT run_id FROM runs ORDER BY combo_id, replicate")
         execute(db, "INSERT INTO job_runs VALUES (?,?)", (job_id, run_id))
-
         # Mod-increment job ID
         job_id = mod(job_id,N_JOBS_MAX*numSubmits) + 1
-
     end
 
     submitScripts = IOStream[]
@@ -211,16 +243,15 @@ function generate_jobs(db::DB,numCombos::Int64)
             (job_id,)
         )]
 
-        n_cores = min(length(run_dirs), N_CORES_PER_JOB_MAX)
-
-        if n_cores > n_cores_count
-            n_cores_count = n_cores
+        if N_CORES_PER_JOB_MAX === nothing
+            n_cores = min(length(run_dirs), N_PROCESSES)
+        else
+            n_cores = min(length(run_dirs), N_CORES_PER_JOB_MAX)
         end
-
         # Write out list of runs
         open(joinpath(job_dir, "runs.txt"), "w") do f
             for run_dir in run_dirs
-                run_script = joinpath(SCRIPT_PATH, run_dir, "run.sh")
+                run_script = joinpath(ROOT_PATH, run_dir, "run.sh")
                 println(f, run_script)
             end
         end
@@ -230,19 +261,19 @@ function generate_jobs(db::DB,numCombos::Int64)
         open(job_sbatch, "w") do f
             print(f, """
             #!/bin/sh
-            #SBATCH --account=pi-pascualmm
-            #SBATCH --partition=broadwl
+            #SBATCH --nodes=1
+            #SBATCH --ntasks-per-node=$(n_cores)
+            #SBATCH --cpus-per-task=1
             #SBATCH --job-name=$(job_id)crispr
-            #SBATCH --tasks=1
-            #SBATCH --cpus-per-task=$(n_cores)
             #SBATCH --mem-per-cpu=$(mem_per_cpu)m
-            #SBATCH --time=1-12:00:00
-            #SBATCH --chdir=$(joinpath(SCRIPT_PATH, job_dir))
+            #SBATCH --time=5:00:00
+            #SBATCH --chdir=$(joinpath(ROOT_PATH, job_dir))
             #SBATCH --output=output.txt
-            #SBATCH --mail-user=armun@uchicago.edu
-            # Uncomment this to use the Midway-provided Julia:
-            module load julia
-            julia $(ROOT_RUNMANY_SCRIPT) $(n_cores) runs.txt
+            #SBATCH --mail-type=FAIL
+            #SBATCH --mail-user=al8784@nyu.edu
+            module purge
+            module load julia/1.6.1
+            ~/julia/my-julia $(ROOT_RUNMANY_SCRIPT) $(n_cores) runs.txt
             """) # runs.txt is for parallel processing
         end
         run(`chmod +x $(job_sbatch)`) # Make run script executable (for local testing)
@@ -259,8 +290,8 @@ function generate_jobs(db::DB,numCombos::Int64)
     @info "
     Sweep will be submitted via $(numSubmits) `submit_jobs.sh` script(s).
     Each `submit_jobs.sh` script submits $(N_JOBS_MAX) jobs.
-    Each job will use $(n_cores_count) cpus at most, where each cpu will use $(mem_per_cpu/1000)GB.
-    Each job therefore will use at most $(n_cores_count*mem_per_cpu/1000)GB of memory in total.
+    Each job will use $(n_cores) cpus at most, where each cpu will use $(mem_per_cpu/1000)GB.
+    Each job therefore will use at most $(n_cores*mem_per_cpu/1000)GB of memory in total.
     "
 end
 
@@ -269,68 +300,6 @@ function pretty_json(params)
     io = IOBuffer()
     JSON.print(io, d, 2)
     String(take!(io))
-end
-
-function init_params(d_symb::Dict{Symbol,Any})
-    Params(;
-        t_final = d_symb[:t_final][1],
-
-        t_output = d_symb[:t_output][1],
-
-        rng_seed = d_symb[:rng_seed][1],
-
-        enable_output = d_symb[:enable_output][1],
-
-        random_initial_alleles = d_symb[:random_initial_alleles][1],
-
-        directional = d_symb[:directional][1],
-
-        evofunction = d_symb[:evofunction][1],
-
-        evofunctionScale = d_symb[:evofunctionScale][1],
-
-        initial_locus_allele = d_symb[:initial_locus_allele][1],
-
-        center_allele = d_symb[:center_allele][1],
-
-        allelic_change = d_symb[:allelic_change][1],
-
-        max_allele = d_symb[:max_allele][1],
-
-        max_fitness = d_symb[:max_fitness][1],
-
-        n_bstrains = d_symb[:n_bstrains][1],
-
-        n_hosts_per_bstrain = d_symb[:n_hosts_per_bstrain][1],
-
-        n_vstrains = d_symb[:n_vstrains][1],
-
-        n_particles_per_vstrain = d_symb[:n_particles_per_vstrain][1],
-
-        n_protospacers = d_symb[:n_protospacers][1],
-
-        n_spacers_max = d_symb[:n_spacers_max][1],
-
-        crispr_failure_prob = d_symb[:crispr_failure_prob][1],
-
-        spacer_acquisition_prob = d_symb[:spacer_acquisition_prob][1],
-
-        microbe_mutation_prob = d_symb[:microbe_mutation_prob][1],
-
-        microbe_carrying_capacity = d_symb[:microbe_carrying_capacity][1],
-
-        viral_burst_size = d_symb[:viral_burst_size][1],
-
-        adsorption_rate = d_symb[:adsorption_rate][1],
-
-        viral_decay_rate = d_symb[:viral_decay_rate][1],
-
-        viral_mutation_rate = d_symb[:viral_mutation_rate][1],
-
-        microbe_death_rate = d_symb[:microbe_death_rate][1],
-
-        microbe_immigration_rate = d_symb[:microbe_immigration_rate][1],
-    )
 end
 
 main()

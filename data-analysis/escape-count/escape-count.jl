@@ -23,6 +23,10 @@ dbSim = SQLite.DB(dbSimPath)
 dbOutput = SQLite.DB(dbOutputPath)
 execute(dbOutput, "CREATE TABLE vstrain_escapes (t_creation REAL,  vstrain_id INTEGER, parent_vstrain_id INTEGER, bstrain_id_escaped INTEGER)")
 execute(dbOutput, "CREATE TABLE bstrain_escapes (t_creation REAL,  bstrain_id INTEGER, parent_bstrain_id INTEGER, vstrain_id_escaped INTEGER)")
+execute(dbOutput, "CREATE TABLE extinction_occurrence (microbes INTEGER, viruses INTEGER)")
+execute(dbOutput, "CREATE TABLE simulation_end_time (microbe_end_time REAL, virus_end_time REAL)")
+execute(dbOutput, "CREATE TABLE bstrains (t_creation REAL,  bstrain_id INTEGER, parent_bstrain_id INTEGER, infecting_vstrain_id INTEGER)")
+execute(dbOutput, "CREATE TABLE vstrains (t_creation REAL,  vstrain_id INTEGER, parent_vstrain_id INTEGER, infected_bstrain_id INTEGER)")
 
 function identifyViralEscape(vstrainID, parentID, tCreate)
     parentHosts = []
@@ -167,8 +171,86 @@ function hostEscapes()
         "host_escape_count", ifnotexists=true)
 end
 
+function extinction()
+    microbesDF = DataFrame(execute(dbSim, "SELECT t, microbial_abundance 
+                                    FROM summary ORDER BY t
+                                    WHERE run_id = $(run_id)"))
+    virusesDF = DataFrame(execute(dbSim, "SELECT t, viral_abundance 
+                                    FROM summary ORDER by t
+                                    WHERE run_id = $(run_id)"))
+    microbesDF = microbesDF[(microbesDF.t.!=0), :]
+    virusesDF = virusesDF[(virusesDF.t.!=0), :]
+    microbeExt = 0
+    virusExt = 0
+    simEndTime = 0
 
+    if issubset(0, microbesDF[:, :microbial_abundance])
+        microbeExt = 1
+        mSimEndTime = maximum(microbesDF[(microbesDF.microbial_abundance.!=0), :].t) + 1
+        println(microbeExt)
+    else
+        microbeExt = 0
+        mSimEndTime = maximum(microbesDF.t)
+        println(microbeExt)
+    end
 
+    if issubset(0, virusesDF[:, :viral_abundance])
+        if issubset(0, microbesDF[:, :microbial_abundance])
+            virusExt = 0
+            vSimEndTime = maximum(virusesDF.t)
+        else
+            virusExt = 1
+            vSimEndTime = maximum(virusesDF[(virusesDF.viral_abundance.!=0), :].t) + 1
+        end
+        println(virusExt)
+    else
+        virusExt = 0
+        vSimEndTime = maximum(virusesDF.t)
+        println(virusExt)
+    end
+
+    execute(dbOutput, "BEGIN TRANSACTION")
+    execute(dbOutput, "INSERT INTO extinction_occurrence VALUES (?,?)", (microbeExt, virusExt))
+    execute(dbOutput, "INSERT INTO simulation_end_time VALUES ($(mSimEndTime),$(vSimEndTime))")
+    execute(dbOutput, "COMMIT")
+
+    tableNames = [table for (table,) in
+                  execute(
+        dbSim,
+        "SELECT name FROM sqlite_master WHERE type='table' 
+AND name in ('bextinctions', 'vextinctions');"
+    )]
+    if length(tableNames) > 0
+        execute(dbOutput, "ATTACH DATABASE '$(dbSimPath)' as dbSim")
+        for table in tableNames
+            if table == "vextinctions"
+                strainID = "vstrain_id"
+                execute(dbOutput, "CREATE TABLE $(table) ($(strainID) INTEGER, t_extinction REAL)")
+                execute(dbOutput, "BEGIN TRANSACTION")
+                execute(dbOutput, "INSERT INTO $(table)($(strainID), t_extinction) SELECT $(strainID), t_extinction FROM dbSim.$(table) WHERE run_id = $(run_id);")
+                execute(dbOutput, "INSERT INTO vstrains (t_creation,  vstrain_id, parent_vstrain_id, infected_bstrain_id)
+                                    SELECT t_creation,  vstrain_id, parent_vstrain_id, infected_bstrain_id 
+                                    FROM dbSim.vstrains WHERE run_id = $(run_id);")
+                execute(dbOutput, "COMMIT")
+            end
+            if table == "bextinctions"
+                strainID = "bstrain_id"
+                execute(dbOutput, "CREATE TABLE $(table) ($(strainID) INTEGER, t_extinction REAL)")
+                execute(dbOutput, "BEGIN TRANSACTION")
+                execute(dbOutput, "INSERT INTO $(table)($(strainID), t_extinction) SELECT $(strainID), t_extinction FROM dbSim.$(table) WHERE run_id = $(run_id);")
+                execute(dbOutput, "INSERT INTO bstrains (t_creation,  bstrain_id, parent_bstrain_id, infecting_vstrain_id)
+                    SELECT t_creation,  bstrain_id, parent_bstrain_id, infecting_vstrain_id 
+                    FROM dbSim.bstrains WHERE run_id = $(run_id);")
+                execute(dbOutput, "COMMIT")
+            end
+        end
+    end
+end
+
+println("Processing extinction occurrences of run $(run_id)")
+extinction()
+println("...and now viral escapes...")
 viralEscapes()
+println("...along with host escapes...")
 hostEscapes()
 println("Complete!")

@@ -32,8 +32,6 @@ function checkRuns()
     end
 end
 
-setdiff
-
 function checkJobs()
     check = 0
     for (job_dir,) in execute(db, "SELECT job_dir FROM jobs ORDER BY job_id")

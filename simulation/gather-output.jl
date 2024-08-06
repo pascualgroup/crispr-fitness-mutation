@@ -88,9 +88,10 @@ function createindices()
     println("(Creating run_id indices...)")
     db = SQLite.DB("sweep_db_gathered.sqlite")
     execute(db, "BEGIN TRANSACTION")
-    for (table_name,) in execute(
+    tableNames = [table_name for (table_name,) in execute(
         db, "SELECT name FROM sqlite_schema
-        WHERE type='table' ORDER BY name;")
+        WHERE type='table' ORDER BY name;")]
+    for table_name in tableNames
         cols = [info.name for info in execute(db,"PRAGMA table_info($(table_name))")]
         if !in("run_id",cols)
             continue
