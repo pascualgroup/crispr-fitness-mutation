@@ -433,18 +433,16 @@ for combo in combos:
     cID = comboSpace['combo_id'].values[0]
     cID0 = comboSpace0['combo_id'].values[0] 
     localAdaptTrunc = localAdaptMaster[(localAdaptMaster.n >= nThresh) & (localAdaptMaster.combo_id == cID)].drop_duplicates()
-    maxTime = 1000
+    maxTime = 600
     localAdaptTrunc = localAdaptTrunc[localAdaptTrunc['t'] <= maxTime]
     tempAdaptTrunc = tempAdaptMaster[(tempAdaptMaster.n >= nThresh) & (tempAdaptMaster.combo_id == cID)].drop_duplicates()
     maxDelay = abs(min(tempAdaptTrunc['delay']))
-    maxDelay = 1000
+    maxDelay = 300
     tempAdaptTrunc = tempAdaptTrunc[tempAdaptTrunc['delay'] <= maxDelay]
     tempAdaptTrunc = tempAdaptTrunc[tempAdaptTrunc['delay'] >= -1*maxDelay]
     localAdaptTrunc0 = localAdaptMaster[(localAdaptMaster.n >= nThresh) & (localAdaptMaster.combo_id == cID0)].drop_duplicates()
     localAdaptTrunc0 = localAdaptTrunc0[localAdaptTrunc0['t'] <= maxTime]
     tempAdaptTrunc0 = tempAdaptMaster[(tempAdaptMaster.n >= nThresh) & (tempAdaptMaster.combo_id == cID0)].drop_duplicates()
-    maxDelay = abs(min(tempAdaptTrunc0['delay']))
-    maxDelay = 1000
     tempAdaptTrunc0 = tempAdaptTrunc0[tempAdaptTrunc0['delay'] <= maxDelay]
     tempAdaptTrunc0 = tempAdaptTrunc0[tempAdaptTrunc0['delay'] >= -1*maxDelay]
     axes[0].fill_between(tempAdaptTrunc0['delay'], tempAdaptTrunc0['mean']-tempAdaptTrunc0['std'],
@@ -479,9 +477,9 @@ for combo in combos:
     axes[0].set_xlabel(xlabel = r'Delay $\tau$',fontsize=15,labelpad=15)
     axes[1].set_xlabel(xlabel = 'Time t',fontsize=15,labelpad=15)
     lim = axes[0].get_xlim()
-    axes[0].set_xlim(-1000, 1000)
+    axes[0].set_xlim(-1*maxDelay, maxDelay)
     lim = axes[1].get_xlim()
-    axes[1].set_xlim(0, 1000)
+    axes[1].set_xlim(0, maxTime)
     axes[0].margins(x=0)
     axes[1].margins(x=0)
     fig.savefig(os.path.join('/Volumes/Yadgah/sylvain-martin-collab',simDir,'adaptation-{0}-{1}_{2}-trunc.pdf'.format(divtype,int(micMutSpacer),nThresh)),dpi=resolve)
