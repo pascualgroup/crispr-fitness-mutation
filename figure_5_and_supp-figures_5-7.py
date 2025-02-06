@@ -24,6 +24,18 @@ DBSIM_PATH = os.path.join(simDir,'sweep_db_gathered.sqlite')
 DBTEMP_PATH = os.path.join(simDir, 'temporal-adaptation.sqlite')
 DBHTEMP_PATH = os.path.join(simDir,'host-temporal-adaptation.sqlite')
 DBLOC_PATH = os.path.join(simDir, 'local-adaptation.sqlite')
+if not os.path.exists(DBSIM_PATH):
+    print("File {} does not exist. Please request from authors or simulate on a cluster.".format(DBSIM_PATH))
+    sys.exit(1)
+if not os.path.exists(DBTEMP_PATH):
+    print("File {} does not exist. Please request from authors or simulate on a cluster.".format(DBTEMP_PATH))
+    sys.exit(1)
+if not os.path.exists(DBHTEMP_PATH):
+    print("File {} does not exist. Please request from authors or simulate on a cluster.".format(DBHTEMP_PATH))
+    sys.exit(1)
+if not os.path.exists(DBLOC_PATH):
+    print("File {} does not exist. Please request from authors or simulate on a cluster.".format(DBHTEMP_PATH))
+    sys.exit(1)
 conSim = sqlite3.connect(DBSIM_PATH)
 curSim = conSim.cursor()
 conTemp = sqlite3.connect(DBTEMP_PATH)

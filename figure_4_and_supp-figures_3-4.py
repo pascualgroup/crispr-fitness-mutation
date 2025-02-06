@@ -23,6 +23,18 @@ DBCOMBO_PATH = os.path.join(simDir,'sweep_db.sqlite')
 DBSIM_PATH = os.path.join(simDir,'sweep_db_gathered.sqlite')
 DBEXT_PATH = os.path.join(simDir,'vextinctions.sqlite')
 DBWALLS_PATH = os.path.join(simDir,'walls-shannon.sqlite')
+if not os.path.exists(DBCOMBO_PATH):
+    print("File {} does not exist. Please request from authors or simulate on a cluster.".format(DBCOMBO_PATH))
+    sys.exit(1)
+if not os.path.exists(DBSIM_PATH):
+    print("File {} does not exist. Please request from authors or simulate on a cluster.".format(DBSIM_PATH))
+    sys.exit(1)
+if not os.path.exists(DBEXT_PATH):
+    print("File {} does not exist. Please request from authors or simulate on a cluster.".format(DBEXT_PATH))
+    sys.exit(1)
+if not os.path.exists(DBWALLS_PATH):
+    print("File {} does not exist. Please request from authors or simulate on a cluster.".format(DBWALLS_PATH))
+    sys.exit(1)
 ####
 conCombo = sqlite3.connect(DBCOMBO_PATH)
 curCombo = conCombo.cursor()

@@ -32,13 +32,19 @@ else:
 #
 DBSIM_PATH = os.path.join(simDir,'sweep_db_gathered.sqlite')
 DBSIM_PATHnoV = os.path.join(simDirNoV,'sweep_db_gathered.sqlite')
+if not os.path.exists(DBSIM_PATH):
+    print("File {} does not exist. Please request from authors or simulate on a cluster.".format(DBSIM_PATH))
+    sys.exit(1)
+if not os.path.exists(DBSIM_PATHnoV):
+    print("File {} does not exist. Please request from authors or simulate on a cluster.".format(DBSIM_PATHnoV))
+    sys.exit(1)
 conSim = sqlite3.connect(DBSIM_PATH)
 curSim = conSim.cursor()
 conSimNoV = sqlite3.connect(DBSIM_PATHnoV)
 curSimNoV = conSimNoV.cursor()
 
 ####
-# FIGURE 2 (FIGURE 1 CODE BLOCK FOLLOWS THAT OF FIGURE 3 BELOW)
+# FIGURE 2 AND SUPP FIGURE 1 (FIGURE 1 CODE BLOCK FOLLOWS THAT OF FIGURE 3 BELOW)
 ####
 numTrees = 1
 scale = 3
@@ -46,7 +52,7 @@ hosts_per_strain = 100
 viruses_per_strain = 100
 carryCap = 400000
 micMutRep = 0
-combos = [(1,0)]
+combos = [(1,0),(2,0)]
 vthreshold = 5
 bthreshold = 0
 ##
@@ -244,7 +250,7 @@ fig.savefig(os.path.join(simDir,'3d-two-traits.pdf'),dpi=500,transparent=True)
 
 
 ####
-# SUPP FIGURE 1
+# SUPP FIGURE 2
 ####
 numTrees = 1
 scale = 3
