@@ -14,8 +14,6 @@ if isfile(dbOutputPath)
     error("$(dbOutputPath) already exists")
 end
 
-# dbSimPath = joinpath("/Volumes/Yadgah/sylvain-martin-collab/21_MOI3", "sweep_db_gathered.sqlite")
-# dbOutputPath = joinpath("/Volumes/Yadgah", "truncate-test.sqlite")
 
 dbSim = SQLite.DB(dbSimPath)
 dbOutput = SQLite.DB(dbOutputPath)

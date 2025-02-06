@@ -10,36 +10,30 @@ using SQLite.DBInterface: execute
 
 run_id = ARGS[1]
 delayInc = parse(Int64, ARGS[2])
+sampleInc = parse(Int64, ARGS[3])
+if delayInc < sampleInc
+    delayInc = sampleInc
+end
 
 ## Define Paths ##
 SCRIPT_PATH = abspath(dirname(PROGRAM_FILE))
 
 dbSimPath = joinpath(SCRIPT_PATH, "..", "..", "simulation", "sweep_db_gathered.sqlite") # cluster
 dbOutputPath = joinpath("temporal-adaptation_output.sqlite") # cluster
+# dbSimPath = joinpath("/Volumes/Yadgah/sylvain-martin-collab/21_MOI3", "sweep_db_gathered.sqlite")
+# dbOutputPath = joinpath("/Volumes/Yadgah", "temporal-adaptation2.sqlite")
 rm(dbOutputPath, force=true)
-# dbSimPath = joinpath("/Volumes/Yadgah","crispr-sweep-7-2-2022/isolates/runID3297-c66-r47/runID3297-c66-r47.sqlite") # local
-# dbSimPath = joinpath("/Volumes/Yadgah/sylvain-martin-collab/9_MOI3", "sweep_db_gathered.sqlite")
-# dbTriPath = joinpath("/Volumes/Yadgah/comboID66/tripartite-networksC66.sqlite") # local
-# dbShanPath = joinpath("/Volumes/Yadgah/comboID66/shannonC66.sqlite") # local
-# dbMatchPath = joinpath("/Volumes/Yadgah/comboID66/matchesC66.sqlite") # local
-# dbOutputPath = joinpath("/Volumes/Yadgah/comboID66/temporal-adaptation.sqlite") # local
-# dbOutputPath = joinpath("/Volumes/Yadgah/comboID1/temporal-adaptation.sqlite") # local
-# dbOutputPath = joinpath("/Volumes/Yadgah/sylvain-martin-collab/9_MOI3", "temporal-adaptation.sqlite")
 
 dbSim = SQLite.DB(dbSimPath)
 dbOutput = SQLite.DB(dbOutputPath)
-
-execute(dbOutput, "CREATE TABLE temporal_adaptation (time_delay REAL, TA REAL)")
-execute(dbOutput, "CREATE TABLE viral_frequency_dependent_fitness (t REAL, vstrain_id INTEGER, fitness REAL)")
-execute(dbOutput, "CREATE TABLE bstrain_to_vstrain_0matches (vstrain_id INTEGER, bstrain_id INTEGER)")
 maxT = maximum([t for (t,) in execute(dbSim, "SELECT t_final FROM param_combos")])
 
 # Create temporary database that is a copy of the main database at the run_id value of the script's argument
-tmpPath = joinpath(ENV["SLURM_TMPDIR"], "temp-adapt-$(run_id).sqlite")
+tmpPath = joinpath(ENV["SLURM_TMPDIR"], "temp-adapt2-$(run_id).sqlite")
+# tmpPath = joinpath("/Volumes/Yadgah/test.sqlite") # local
 println("this is the temp path: $(tmpPath)")
 rm(tmpPath, force=true)
 dbTempSim = SQLite.DB(tmpPath)
-# dbTempSim = SQLite.DB("/Volumes/Yadgah/test.sqlite") # local
 execute(dbTempSim, "CREATE TABLE babundance (t REAL, bstrain_id INTEGER, abundance INTEGER)")
 execute(dbTempSim, "CREATE TABLE vabundance (t REAL, vstrain_id INTEGER, abundance INTEGER)")
 execute(dbTempSim, "CREATE TABLE bspacers (bstrain_id INTEGER, spacer_id INTEGER)")
@@ -61,137 +55,121 @@ execute(dbTempSim, "CREATE INDEX vpspacers_index ON vpspacers (vstrain_id)")
 execute(dbTempSim, "CREATE INDEX summary_index ON summary (t)")
 execute(dbTempSim, "COMMIT")
 
-function identify0Matches()
-    for (vstrain_id,) in execute(
-        dbTempSim,
-        "SELECT DISTINCT vstrain_id FROM vabundance
-        ORDER BY vstrain_id")
-        vpspacers = [spacer_id for (spacer_id,) in
-                     execute(dbTempSim, "SELECT spacer_id FROM vpspacers WHERE vstrain_id = $(vstrain_id)")]
-        for (bstrain_id,) in execute(
+
+function microbesWithMissingTimes(tDelays, sampleInc)
+    btimes = [t for (t,) in execute(dbTempSim, "SELECT t FROM summary")]
+    tMextinct = [t for (t,) in execute(dbTempSim, "SELECT t
+                FROM summary 
+                WHERE microbial_abundance == 0")]
+    if length(tMextinct) > 0 
+        if minimum(tMextinct) < maximum(tDelays)
+            tMax = maximum(btimes[btimes.<minimum(tMextinct)])
+            times = collect(0:sampleInc:tMax)
+        else
+            times = tDelays
+        end
+    else
+        times = tDelays
+    end
+    bstrains = DataFrame(execute(
             dbTempSim,
-            "SELECT DISTINCT bstrain_id FROM babundance ORDER BY bstrain_id")
-            bspacers = [spacer_id for (spacer_id,) in
-                execute(dbTempSim, "SELECT spacer_id FROM bspacers WHERE bstrain_id = $(bstrain_id)")]
-            if length(intersect(bspacers,vpspacers)) == 0
-                execute(dbOutput, "INSERT INTO bstrain_to_vstrain_0matches VALUES (?,?)",
-                    (vstrain_id, bstrain_id))
-            end
+            "SELECT DISTINCT t, microbial_abundance FROM summary 
+                WHERE t in ($(join(times,", ")))"))
+    bstrains = innerjoin(bstrains, DataFrame(execute(
+                dbTempSim, "SELECT DISTINCT t, bstrain_id, abundance FROM babundance 
+                WHERE t in ($(join(times,", "))) ORDER BY bstrain_id")), on=:t)                
+    timesMissing = sort([setdiff(Set(times), Set(bstrains[:,:t]))...])
+    # if length(tMextinct) > 0 
+    #     if tMextinct < maximum(tDelays)
+    #         timesMissing = timesMissing[timesMissing .< tMextinct]
+    #     end
+    # end
+    if length(timesMissing) > 0
+        for tMiss in timesMissing
+            lastTime = maximum(btimes[btimes.<tMiss])
+            # println("last time: $(lastTime)")
+            new = DataFrame(execute(
+                dbTempSim,
+                "SELECT DISTINCT t, microbial_abundance FROM summary 
+                    WHERE t = $(lastTime)"))
+            new = innerjoin(new, DataFrame(execute(
+                dbTempSim, "SELECT DISTINCT t, bstrain_id, abundance FROM babundance 
+                WHERE t = $(lastTime) ORDER BY bstrain_id")),on=:t)
+            replace!(new.t, lastTime => tMiss)
+            append!(bstrains, new)
         end
     end
-    execute(dbOutput, "BEGIN TRANSACTION")
-    execute(dbOutput, "CREATE INDEX match_index ON bstrain_to_vstrain_0matches (vstrain_id)")
-    execute(dbOutput, "COMMIT")
+    rename!(bstrains, :microbial_abundance => :bfrequency)
+    rename!(bstrains, :t => :t_delay)
+    bstrains[!, :bfrequency] = bstrains[!, :abundance] ./ bstrains[!, :bfrequency]
+    select!(bstrains, Not([:abundance]))
+    return bstrains, tMextinct
+end
+function identify0Matches!(vstrainsDF, sampleInc, dbOutput)
+    tDelays = unique(vstrainsDF[:, :t_delay])
+    bstrains, tMextinct = microbesWithMissingTimes(tDelays, sampleInc)
+    if length(tMextinct) > 0
+        if maximum(tDelays) > minimum(tMextinct)
+            vdelays = Vector{Float64}(vstrainsDF[vstrainsDF.t_delay .>=minimum(tMextinct), :t_delay])
+            numTimes = length(vdelays)
+            sbstrains = DataFrame(t_delay=vdelays, bfrequency=Vector{Float64}(repeat([0], numTimes)))
+            innerjoin(vstrainsDF,sbstrains,on=:t_delay) |> 
+                SQLite.load!(dbOutput, "vtemporal_adaptation", ifnotexists=true)
+        end
+    end
+    vstrainID = vstrainsDF[:,:vstrain_id][1]
+    sbstrains = [spacerID for (spacerID,) in execute(
+        dbTempSim,
+        "SELECT spacer_id FROM vpspacers
+        WHERE vstrain_id = $(vstrainID)")]
+    strains = bstrains[:,:bstrain_id]
+    sbstrains = DataFrame(execute(dbTempSim, "SELECT bstrain_id, spacer_id FROM bspacers 
+        WHERE bstrain_id in ($(join(strains,", "))) AND spacer_id in ($(join(sbstrains,", ")))"
+    ))
+    sbstrains = setdiff(strains, sbstrains[:, :bstrain_id])
+    # if length(sbstrains) > 0
+    DataFrame(vstrain_id=repeat([vstrainID],length(sbstrains)),bstrain_id=sbstrains) |> 
+            SQLite.load!(dbOutput, "bstrain_to_vstrain_0matches", ifnotexists=true)
+    sbstrains = bstrains[[in(x, sbstrains) for x in bstrains.bstrain_id], :]
+    sbstrains = groupby(sbstrains, :t_delay)
+    sbstrains = combine(sbstrains, [:bfrequency] .=> sum; renamecols=false)
+    innerjoin(vstrainsDF, sbstrains, on=:t_delay) |> SQLite.load!(dbOutput, "vtemporal_adaptation", ifnotexists=true)
+    # end
+    # tMissing = Vector{Float64}(setdiff(tDelays, sbstrains[:, :t_delay]))
+    # numTimes = length(tMissing)
+    # if numTimes > 0
+    #     # println("Immune types exist for strain: $(vstrainID)")
+    #     innerjoin(vstrainsDF[[in(x, tMissing) for x in vstrainsDF.t_delay],:], 
+    #     DataFrame(t_delay=tMissing, bfrequency=Vector{Float64}(repeat([0],numTimes))), 
+    #         on=:t_delay) |> SQLite.load!(dbOutput, "vtemporal_adaptation", ifnotexists=true)
+    # end
 end
 
-function temporalAdaptation(maxT, delayInc)
-    maxSimT = maximum([t for (t,) in execute(dbTempSim, "SELECT t FROM vabundance")])
+function temporalAdaptation(maxT, sampleInc, delayInc, dbTempSim, dbOutput)
     delays = unique([reverse(collect(0:-delayInc:-maxT))..., collect(0:delayInc:maxT)...])
-    for delay in delays
-        println("DELAY: $(delay)")
-        if maxSimT < abs(delay)
-            continue
-        end
-        TA = 0
-        n = 0
-        for (t,) in execute(dbTempSim, "SELECT DISTINCT t FROM vabundance ORDER BY t")
-            # println("time: $(t)")
-            if t + delay > maxSimT || t + delay < 0
-                continue
-            end
-            btimes = [t for (t,) in execute(dbTempSim, "SELECT t FROM summary")]
-            if !in(t+delay,btimes)
-                tpast = maximum(btimes[btimes.<t+delay])
-                (btotal,) = execute(
-                dbTempSim,
-                "SELECT microbial_abundance FROM summary
-                WHERE t = $(tpast)"
-                )
-            else
-                (btotal,) = execute(
-                dbTempSim,
-                "SELECT microbial_abundance FROM summary
-                WHERE t = $(t + delay)"
-                )
-            end
-            btotal = btotal.microbial_abundance
-            (vtotal,) = execute(
-                dbTempSim,
-                "SELECT viral_abundance FROM summary
-                WHERE t = $(t)"
-            )
-            vtotal = vtotal.viral_abundance
-            if vtotal == 0 || btotal == 0
-                continue
-            end 
-            vstrains = DataFrame(execute(
-                dbTempSim,
-                "SELECT vstrain_id, abundance FROM vabundance
-                WHERE t = $(t)"
-            ))
-            rename!(vstrains, :abundance => :vfreq)
-            vstrains = vstrains[vstrains.vfreq.!=0, :]
-            if !in(t+delay,btimes)
-                tpast = maximum(btimes[btimes.<t+delay])
-                bstrains = DataFrame(execute(
-                    dbTempSim,
-                    "SELECT bstrain_id, abundance FROM babundance
-                    WHERE t = $(tpast)"
-                ))
-                rename!(bstrains, :abundance => :bfreq)
-                bstrains = bstrains[bstrains.bfreq.!=0, :]
-                (btotal,) = execute(
-                    dbTempSim,
-                    "SELECT microbial_abundance FROM summary
-                    WHERE t = $(tpast)"
-                )
-            else
-                bstrains = DataFrame(execute(
-                    dbTempSim,
-                    "SELECT bstrain_id, abundance FROM babundance
-                    WHERE t = $(t + delay)"
-                ))
-                rename!(bstrains, :abundance => :bfreq)
-                bstrains = bstrains[bstrains.bfreq.!=0, :]
-                (btotal,) = execute(
-                    dbTempSim,
-                    "SELECT microbial_abundance FROM summary
-                    WHERE t = $(t + delay)"
-                )
-            end
-            btotal = btotal.microbial_abundance
-            matches = DataFrame(execute(
-                dbOutput,
-                "SELECT bstrain_id, vstrain_id FROM bstrain_to_vstrain_0matches
-                WHERE vstrain_id in ($(join(vstrains[!,:vstrain_id],", ")))
-                AND bstrain_id in ($(join(bstrains[!,:bstrain_id],", ")))"
-            ))
-            matches = innerjoin(matches, vstrains, on=:vstrain_id)
-            matches = innerjoin(matches, bstrains, on=:bstrain_id)
-            if isempty(matches)
-                continue
-            end
-            matches[!, :vfreq] = matches[!, :vfreq] / vtotal
-            matches[!, :bfreq] = matches[!, :bfreq] / btotal
-            matches[!, :fitness] = matches[!, :bfreq] .* matches[!, :vfreq]
-            if delay == 0
-                matches = groupby(matches, :vstrain_id)
-                matches = combine(matches, [:fitness] .=> sum; renamecols=false)
-                matches[!, :t] = fill(Float64(t),length(matches[!,:vstrain_id]))
-                matches |> SQLite.load!(dbOutput, "viral_frequency_dependent_fitness", ifnotexists=true)
-            end
-            TA += sum(matches[!, :fitness])
-            n += 1
-        end
-        if n > 0
-            execute(dbOutput, "INSERT INTO temporal_adaptation VALUES (?,?)",
-                (delay, TA / (maxSimT + 1 - abs(delay))))
-        end
+    times = collect(0:sampleInc:maxT)
+    map(t->repeat([t],length(delays)),times)
+    timeDelayDF = DataFrame(t = reduce(vcat, map(t -> repeat([t], length(delays)), times)), delay = reduce(vcat, repeat(delays, length(times))))
+    vstrains = [vstrainID for (vstrainID,) in execute(
+        dbTempSim, "SELECT DISTINCT vstrain_id FROM vabundance 
+         WHERE t in ($(join(times,", "))) ORDER BY vstrain_id")]
+    vTotalDF = DataFrame(execute(
+        dbTempSim, "SELECT DISTINCT t, viral_abundance FROM summary 
+         WHERE t in ($(join(times,", ")))"))
+    rename!(vTotalDF, :viral_abundance => :vfrequency)
+    for vstrainID in vstrains
+        println("vstrainID: $(vstrainID)")
+        vstrainsDF = innerjoin(DataFrame(execute(dbTempSim, "SELECT DISTINCT t, vstrain_id, abundance FROM vabundance 
+                        WHERE t in ($(join(times,", "))) AND vstrain_id = $(vstrainID)")),timeDelayDF,on=:t)
+        vstrainsDF = innerjoin(vstrainsDF,vTotalDF,on=:t)
+        vstrainsDF[!, :vfrequency] = vstrainsDF[!, :abundance] ./ vstrainsDF[!, :vfrequency]
+        select!(vstrainsDF,Not([:abundance]))
+        vstrainsDF[!, :t_delay] = vstrainsDF[!, :t] .+ vstrainsDF[!, :delay]
+        vstrainsDF = vstrainsDF[(vstrainsDF.t_delay.<=maxT).&(vstrainsDF.t_delay.>=0), :]
+        identify0Matches!(vstrainsDF, sampleInc, dbOutput)
     end
 end
 
-identify0Matches()
-temporalAdaptation(maxT, delayInc)
-# execute(dbOutput, "DROP TABLE bstrain_to_vstrain_0matches")
+temporalAdaptation(maxT, sampleInc, delayInc, dbTempSim, dbOutput)
 rm(tmpPath, force=true)
 println("Complete!")

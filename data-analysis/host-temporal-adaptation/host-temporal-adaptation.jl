@@ -20,8 +20,7 @@ SCRIPT_PATH = abspath(dirname(PROGRAM_FILE))
 
 dbSimPath = joinpath(SCRIPT_PATH, "..", "..", "simulation", "sweep_db_gathered.sqlite") # cluster
 dbOutputPath = joinpath("host-temporal-adaptation_output.sqlite") # cluster
-# dbSimPath = joinpath("/Volumes/Yadgah/sylvain-martin-collab/26_MOI3", "sweep_db_gathered.sqlite")
-# dbOutputPath = joinpath("/Volumes/Yadgah", "host-temporal-adaptation.sqlite")
+
 rm(dbOutputPath, force=true)
 
 dbSim = SQLite.DB(dbSimPath)

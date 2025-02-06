@@ -46,7 +46,6 @@ def keepWhichStrains(conSimTree, species_stacked, species_total, strain_id, stra
                 np.array(parentTrack) != 0])
         return list(np.array(keepStrainsNew)[np.array(keepStrainsNew) != 0])
 
-
 def speciesMullerTreeHostVirus(justStrains, run_id, DBSIM_PATH, DBTREE_PATH, maxticksize, abundthresholdM, abundthresholdV, filterStrains, spacingM, spacingV, figsize):
     if not justStrains:
         figTree = plt.figure(figsize=figsize)
@@ -429,7 +428,7 @@ def speciesMullerTreeHostVirus(justStrains, run_id, DBSIM_PATH, DBTREE_PATH, max
                 #                     ) for strain in labels]
                 print(legendLabels)
                 legend = axesTree[2].legend(handles, legendLabels, loc='lower right', title="Intrinsic Host\nGrowth Rates", fontsize=10, title_fontsize=10)
-                legend.get_frame().set_alpha(0.5)
+                legend.get_frame().set_alpha(0.8)
             if species == 'virus':
                 axes[i].plot(species_total['t'], species_total['vtotal'],linewidth=0,color='grey')
                 axes[i].fill_between(species_total['t'],species_total['vtotal'], color='grey',alpha=0.3)
@@ -479,10 +478,8 @@ def speciesMullerTreeHostVirus(justStrains, run_id, DBSIM_PATH, DBTREE_PATH, max
     if justStrains:
         return [], [], [], [], microbeColorDict, bstrainTimes, keepTreeStrainsDF, microbeStrainsDF
 
-
 def func(i):
     return not math.isnan(i)
-
 
 def findImmuneIDs(runIDs,conSim):
     print('...finding immunes IDs...')
@@ -528,7 +525,6 @@ def findImmuneIDs(runIDs,conSim):
                         ignore_index=True)
     return immuneIDs 
 
-
 def findCladeIDs(runIDs,conSim):
     print('...finding clade IDs...')
     cladeIDs = pd.DataFrame({'bstrain_id' : [], 'clade_id' : [], 'run_id' : []})
@@ -562,7 +558,6 @@ def findCladeIDs(runIDs,conSim):
                                     'run_id' : [int(runID)]*len(lineage)})],
                         ignore_index=True) 
     return cladeIDs
-
 
 def computeTraitDistribution(runIDs,cID,conSim):
     print('...computing trait distributions...')
@@ -601,7 +596,6 @@ def computeTraitDistribution(runIDs,cID,conSim):
     meanDist = meanDist.merge(numRuns, on=['combo_id', 'evofunctionScale', 't'])
     return dist, meanDist
 
-
 def computeSpacerDistribution(runIDs,immuneIDs,conSim):
     print('...computing spacer statistics...')
     diversityStats = pd.DataFrame({'run_id' : [], 't' : [],
@@ -639,7 +633,6 @@ def computeSpacerDistribution(runIDs,immuneIDs,conSim):
                 simpson_mean=('simpson','mean'),
                 simpson_std=('simpson','std')).reset_index()
     return diversityStats
-
 
 def computeCladeDiversity(runIDs,immuneIDs,cladeIDs,conSim):
     print('...computing clade diversity...')
@@ -715,8 +708,8 @@ def computeCladeDiversity(runIDs,immuneIDs,cladeIDs,conSim):
     cladeDiversity = cladeDiversity[cladeDiversity.n >= 2]
     return cladeDiversity
 
-
-def computeVstats(runIDs,conSim):
+def computeVstats(runIDs,cID,conSim):
+    print('...computing viral statistics...')
     virus_total = pd.read_sql_query("SELECT run_id, t, viral_abundance FROM summary \
                                     WHERE run_id in ({}) AND viral_abundance > 0"
                                     .format(', '.join(map(str, runIDs[runIDs.combo_id==cID]['run_id']))), conSim)\
@@ -726,3 +719,484 @@ def computeVstats(runIDs,conSim):
         .reset_index()
     vstats = vstats[vstats.n >= 2]
     return vstats
+
+def make_DFs(i,combos,scale,simDir,DBSIM_PATH,conSim,conSimNoV,figxy,vthreshold,bthreshold,micMutRep,hosts_per_strain, viruses_per_strain,\
+                abundthresholdM,abundthresholdV,filterStrains,spacingM,spacingV,maxticksize):
+    (bcomm,micMutSpacer) = combos[i]
+    comboSpace = pd.read_sql_query(
+        "SELECT combo_id, evofunctionScale \
+            FROM param_combos WHERE \
+            microbe_mutation_prob_per_spacer = {0} \
+            AND microbe_mutation_prob_per_replication = {1} \
+            AND init_bcomm_function = {2} \
+            AND n_hosts_per_bstrain >= {3} \
+            AND n_particles_per_vstrain = {4} \
+            ORDER BY combo_id"
+        .format(micMutSpacer, micMutRep, bcomm, hosts_per_strain, viruses_per_strain),
+        conSim)
+    comboSpaceNoV = pd.read_sql_query(
+        "SELECT combo_id, evofunctionScale \
+            FROM param_combos WHERE \
+            microbe_mutation_prob_per_replication = {0} \
+            AND init_bcomm_function = {1} \
+            AND n_hosts_per_bstrain >= {2} \
+            AND n_particles_per_vstrain = 0 \
+            ORDER BY combo_id"
+        .format(micMutRep, bcomm, hosts_per_strain),
+        conSimNoV)
+    ##
+    cID = comboSpace[comboSpace.evofunctionScale==scale]['combo_id'].values[0]
+    cIDNoV = comboSpaceNoV[comboSpaceNoV.evofunctionScale==scale]['combo_id'].values[0] 
+    ##
+    runIDs = pd.read_sql_query(
+        "SELECT combo_id, run_id FROM runs \
+            WHERE combo_id in ({})"
+        .format(cID), conSim)
+    runIDsNoV = pd.read_sql_query(
+        "SELECT combo_id, run_id FROM runs \
+            WHERE combo_id in ({})"
+        .format(cIDNoV), conSimNoV)
+    ##
+    with open('/Volumes/Yadgah/sylvain-martin-collab/{0}/all-figures/runID-cID{1}.txt'.format(simDir,cID)) as f:
+        run_id = f.readlines()
+    ##  
+    sampleRunID = int(run_id[0])
+    print(cID)
+    DBTREE_PATH = os.path.join(
+    '/Volumes', 'Yadgah', 'sylvain-martin-collab', simDir,'all-figures','trees_output_cID{0}-runID{1}-bthresh{2}-vthresh{3}.sqlite'\
+        .format(cID,sampleRunID,vthreshold,bthreshold))
+    _, _, _, _, speciesColorDict, strainTimes, _, microbeStrainsDF = \
+        speciesMullerTreeHostVirus(True,sampleRunID, DBSIM_PATH, DBTREE_PATH, maxticksize, 
+                            abundthresholdM, abundthresholdV,  filterStrains, 
+                            spacingM, spacingV, figxy)
+    immuneIDs = findImmuneIDs(runIDs,conSim)
+    immuneIDsNoV = findImmuneIDs(runIDsNoV,conSimNoV)
+    cladeIDs = findCladeIDs(runIDs,conSim)
+    ##########
+    noVdist, meanNoVDist = computeTraitDistribution(runIDsNoV,cIDNoV,conSimNoV)
+    dist, meanDist = computeTraitDistribution(runIDs,cID,conSim)
+    ## DIVERSITY
+    diversityStats = computeSpacerDistribution(runIDs,immuneIDs,conSim)
+    diversityStatsNoV = computeSpacerDistribution(runIDsNoV,immuneIDsNoV,conSimNoV)
+    ## Clade Immune Proportions
+    cladeDivAllN = computeCladeDiversity(runIDs,immuneIDs,cladeIDs,conSim)
+    cladeDiversity = cladeDivAllN[cladeDivAllN['n']>9]
+    #
+    vstats = computeVstats(runIDs,cID,conSim)
+    ####
+    ####
+    return vstats,meanDist,meanNoVDist,cladeDiversity,diversityStats,diversityStatsNoV,cID,cIDNoV,scale,\
+                speciesColorDict,strainTimes,microbeStrainsDF
+
+def make_figure(simDir,vstats,meanDist,meanNoVDist,cladeDiversity,diversityStats,diversityStatsNoV,ti,tf,cID,cIDNoV,scale,\
+                resolve,speciesColorDict,strainTimes,microbeStrainsDF,rateName,diversity,propTitle,tree_parent_strain_id,tree_strain_id):
+    # FIGURE
+    figsizeQuad = (15,7)
+    fig = plt.figure(figsize=figsizeQuad)
+    gs = plt.GridSpec(3, 2, figure=fig, hspace=.065, wspace=.6, height_ratios=[1,1,4])
+    ax1 = fig.add_subplot(gs[0:4, 0])
+    ax2 = fig.add_subplot(gs[0:1, 1])
+    ax3 = fig.add_subplot(gs[1:2, 1], sharex=ax2)
+    ax4 = fig.add_subplot(gs[2:3, 1], sharex=ax2)
+    axes = [ax1, ax2, ax3, ax4,
+            ax1.twinx(),ax2.twinx(), ax3.twinx()]
+    for i in range(0,3):
+        # i = 0
+        axes[i].fill_between(vstats[vstats.t!=0]['t'],
+                            vstats[vstats.t!=0]['exp_vtotal'] -
+                            vstats[vstats.t!=0]['std_vtotal'],
+                            vstats[vstats.t!=0]['exp_vtotal'] +
+                            vstats[vstats.t!=0]['std_vtotal'], color='grey', alpha=0.1)
+        axes[i].plot(vstats['t'],
+                    vstats['exp_vtotal'],
+                    linewidth=2, color='grey', label='Viral Abund.', linestyle='solid', alpha=0.75)
+        lim = axes[i].get_ylim()
+        axes[i].set_ylim(0, lim[1])
+        axes[i].yaxis.tick_right()
+        # axes[i].set_xlim(0, 2000)
+        axes[i].tick_params(axis='x', labelsize=15)
+        # axes[i].set_xscale('log', base=10)
+        if i == 0:
+            axes[i].set_ylabel(ylabel='Viral Abundance',
+                            rotation=270, labelpad=25, fontsize=15)
+            axes[i].tick_params(axis='y', labelsize=15)
+            axes[i].yaxis.get_offset_text().set_fontsize(15)
+            axes[i].yaxis.set_label_position("right")
+        if i != 0:
+            # print(i)
+            axes[i].set_yticks([])
+    #
+    # axes[0].tick_params(axis='x', labelcolor='w', top=False,
+    #                     bottom=False, left=False, right=False)
+    axes[1].tick_params(axis='x', labelcolor='w', top=False,
+                        bottom=False, left=False, right=False)
+    axes[2].tick_params(axis='x', labelcolor='w', top=False,
+                    bottom=False, left=False, right=False)
+    axes[4].fill_between(meanDist[meanDist['combo_id'] == cID]['t'],
+                        meanDist[meanDist['combo_id'] == cID]['meanExp'] -
+                        meanDist[meanDist['combo_id'] == cID]['stdExp'],
+                        meanDist[meanDist['combo_id'] == cID]['meanExp'] +
+                        meanDist[meanDist['combo_id'] == cID]['stdExp'], color='mediumblue', alpha=0.3)
+    axes[4].plot(meanDist[meanDist['combo_id'] == cID]['t'],
+                meanDist[meanDist['combo_id'] == cID]['meanExp'],
+                linewidth=2, color='mediumblue', label=' '.join([r'$\sigma =$','{}'.format(scale)]))
+    axes[4].fill_between(meanNoVDist[meanNoVDist['combo_id'] == cIDNoV]['t'],
+                        meanNoVDist[meanNoVDist['combo_id'] == cIDNoV]['meanExp'] -
+                        meanNoVDist[meanNoVDist['combo_id']
+                                    == cIDNoV]['stdExp'],
+                        meanNoVDist[meanNoVDist['combo_id'] == cIDNoV]['meanExp'] +
+                        meanNoVDist[meanNoVDist['combo_id'] == cIDNoV]['stdExp'], color='lime', alpha=0.3)
+    axes[4].plot(meanNoVDist[meanNoVDist['combo_id'] == cIDNoV]['t'],
+                meanNoVDist[meanNoVDist['combo_id'] == cIDNoV]['meanExp'],
+                linewidth=2, color='lime', label=' '.join([r'$\sigma =$','{},'.format(scale),'no virus']), linestyle='dashed')
+    ##
+    cladeIDX = strainTimes[strainTimes[tree_parent_strain_id] == 0]\
+                .merge(microbeStrainsDF,on=['tree_bstrain_id']).sort_values(by=['tree_bstrain_id'])
+    cladeIDX = cladeIDX[['tree_bstrain_id','bstrain_id','growth_rate']]
+    for cladeID in cladeIDX['bstrain_id']:
+        speciesID = microbeStrainsDF[microbeStrainsDF.bstrain_id == cladeID][tree_strain_id].values[0]
+        axes[3].fill_between(cladeDiversity[cladeDiversity.clade_id == cladeID]['t'],
+                        cladeDiversity[cladeDiversity.clade_id == cladeID]['prop_richness_mean'] -
+                        cladeDiversity[cladeDiversity.clade_id ==
+                                        cladeID]['prop_richness_std'],
+                        cladeDiversity[cladeDiversity.clade_id == cladeID]['prop_richness_mean'] +
+                        cladeDiversity[cladeDiversity.clade_id == cladeID]['prop_richness_std'], 
+                        color=speciesColorDict[speciesID], alpha=0.3)
+    #
+    for cladeID in cladeIDX['bstrain_id']:
+        gRate = cladeIDX[cladeIDX.bstrain_id == cladeID]['growth_rate'].values[0]
+        speciesID = microbeStrainsDF[microbeStrainsDF.bstrain_id == cladeID][tree_strain_id].values[0]
+        axes[3].plot(cladeDiversity[cladeDiversity.clade_id == cladeID]['t'],
+                cladeDiversity[cladeDiversity.clade_id ==
+                                cladeID]['prop_richness_mean'],
+                color=speciesColorDict[speciesID], \
+                    label=' '.join([r" $\sim$","{}".format(np.round(gRate,3))]),\
+                    linewidth=2, linestyle='solid',alpha=0.75)
+    #
+    axes[5].fill_between(diversityStats['t'],
+                        diversityStats['simpson_mean'] -
+                        diversityStats['simpson_std'],
+                        diversityStats['simpson_mean'] +
+                        diversityStats['simpson_std'], color='mediumblue', alpha=0.3)
+    axes[5].plot(diversityStats['t'],
+                diversityStats['simpson_mean'],
+                linewidth=2, color='mediumblue')
+    axes[5].fill_between(diversityStatsNoV['t'],
+                        diversityStatsNoV['simpson_mean'] -
+                        diversityStatsNoV['simpson_std'],
+                        diversityStatsNoV['simpson_mean'] +
+                        diversityStatsNoV['simpson_std'], color='lime', alpha=0.3)
+    axes[5].plot(diversityStatsNoV['t'],
+                diversityStatsNoV['simpson_mean'],
+                linewidth=2, color='lime', linestyle='dashed')
+    #
+    axes[6].fill_between(diversityStats['t'],
+                        diversityStats['richness_mean'] -
+                        diversityStats['richness_std'],
+                        diversityStats['richness_mean'] +
+                        diversityStats['richness_std'], color='mediumblue', alpha=0.3)
+    axes[6].plot(diversityStats['t'],
+                diversityStats['richness_mean'],
+                linewidth=2, color='mediumblue')
+    axes[6].fill_between(diversityStatsNoV['t'],
+                        diversityStatsNoV['richness_mean'] -
+                        diversityStatsNoV['richness_std'],
+                        diversityStatsNoV['richness_mean'] +
+                        diversityStatsNoV['richness_std'], color='lime', alpha=0.3)
+    axes[6].plot(diversityStatsNoV['t'],
+                diversityStatsNoV['richness_mean'],
+                linewidth=2, color='lime', linestyle='dashed')
+        #
+        #
+    axes[0].set_xscale('log', base=10)
+    axes[1].set_xscale('log', base=10)
+    axes[3].tick_params(axis='x', labelsize=15)
+    axes[3].tick_params(axis='y', labelsize=15)
+    axes[4].tick_params(axis='x', labelsize=15)
+    axes[4].tick_params(axis='y', labelsize=15)
+    axes[5].tick_params(axis='x', labelsize=15)
+    axes[5].tick_params(axis='y', labelsize=10)
+    axes[6].tick_params(axis='x', labelsize=15)
+    axes[6].tick_params(axis='y', labelsize=10)
+    axes[4].yaxis.set_label_position("left")
+    axes[4].yaxis.tick_left()
+    axes[5].yaxis.set_label_position("left")
+    axes[5].yaxis.tick_left()
+    axes[6].yaxis.set_label_position("left")
+    axes[6].yaxis.tick_left()
+    s = ['Expected\n{0} Mean '.format(rateName), r'$\mathbb{E}[\bar{r}]$']
+    axes[4].set_ylabel(
+        ylabel=r''.join(s), labelpad=10, fontsize=15)
+    axes[3].set_ylabel(ylabel='Fraction of\n{}'.format(diversity), labelpad=10, fontsize=15)
+    axes[6].set_ylabel(ylabel = 'Immune\nRichness',labelpad=10,fontsize=10)
+    axes[5].set_ylabel(ylabel = 'Immune\nSimpson\nIndex',labelpad=10,fontsize=10)
+    handles = []
+    labels = []
+    handle, label = axes[0].get_legend_handles_labels()
+    handles.extend(handle)
+    labels.extend(label)
+    handle, label = axes[4].get_legend_handles_labels()
+    handles.extend(handle)
+    labels.extend(label)
+    axes[4].legend(handles, labels, loc='lower left', fontsize=12)
+    handles = []
+    labels = []
+    handle, label = axes[3].get_legend_handles_labels()
+    handles.extend(handle[::-1])
+    labels.extend(label[::-1])
+    axes[3].legend(handles,labels,loc='upper left', fontsize=8.5, title=propTitle, title_fontsize=8.5,ncol=4)
+    axes[3].set_xlabel(xlabel='Time', fontsize=15, labelpad=15)
+    axes[4].set_xlabel(xlabel='Time', fontsize=15, labelpad=15)
+    axes[0].set_xlabel(xlabel='Time', fontsize=15, labelpad=15)
+    axes[0].set_xlim(ti, tf)
+    axes[1].set_xlim(ti, tf)
+    axes[4].set_xlim(ti, tf)
+    axes[5].set_xlim(ti, tf)
+    axes[2].set_xlim(ti, tf)
+    axes[3].set_xlim(ti, tf)
+    axes[5].set_xlim(ti, tf)
+    if cID == 108:
+        lim = axes[3].get_ylim()
+        axes[3].set_ylim(0, lim[1])
+    fig.savefig(os.path.join(simDir,'diversity-cID{0}_scale{1}.pdf'.format(cID,scale)),dpi=resolve)
+    plt.close('all')
+    ##
+
+def make_suppDFs2(i,combos,scale,simDir,DBSIM_PATH,conSim,conSimNoV,figxy,vthreshold,bthreshold,micMutRep,hosts_per_strain, viruses_per_strain,\
+                  abundthresholdM,abundthresholdV,filterStrains,spacingM,spacingV,maxticksize):
+    (bcomm,micMutSpacer) = combos[i]
+    comboSpace = pd.read_sql_query(
+        "SELECT combo_id, evofunctionScale \
+            FROM param_combos WHERE \
+            microbe_mutation_prob_per_spacer = {0} \
+            AND microbe_mutation_prob_per_replication = {1} \
+            AND init_bcomm_function = {2} \
+            AND n_hosts_per_bstrain >= {3} \
+            AND n_particles_per_vstrain = {4} \
+            ORDER BY combo_id"
+        .format(micMutSpacer, micMutRep, bcomm, hosts_per_strain, viruses_per_strain),
+        conSim)
+    comboSpaceNoV = pd.read_sql_query(
+        "SELECT combo_id, evofunctionScale \
+            FROM param_combos WHERE \
+            microbe_mutation_prob_per_replication = {0} \
+            AND init_bcomm_function = {1} \
+            AND n_hosts_per_bstrain >= {2} \
+            AND n_particles_per_vstrain = 0 \
+            ORDER BY combo_id"
+        .format(micMutRep, bcomm, hosts_per_strain),
+        conSimNoV)
+    ##
+    cID = comboSpace[comboSpace.evofunctionScale==scale]['combo_id'].values[0]
+    cIDNoV = comboSpaceNoV[comboSpaceNoV.evofunctionScale==scale]['combo_id'].values[0] 
+    ##
+    runIDs = pd.read_sql_query(
+        "SELECT combo_id, run_id FROM runs \
+            WHERE combo_id in ({})"
+        .format(cID), conSim)
+    runIDsNoV = pd.read_sql_query(
+        "SELECT combo_id, run_id FROM runs \
+            WHERE combo_id in ({})"
+        .format(cIDNoV), conSimNoV)
+    ##
+    with open('/Volumes/Yadgah/sylvain-martin-collab/{0}/all-figures/runID-cID{1}.txt'.format(simDir,cID)) as f:
+        run_id = f.readlines()
+    ##  
+    sampleRunID = int(run_id[0])
+    print(cID)
+    DBTREE_PATH = os.path.join(
+    '/Volumes', 'Yadgah', 'sylvain-martin-collab', simDir,'all-figures','trees_output_cID{0}-runID{1}-bthresh{2}-vthresh{3}.sqlite'\
+        .format(cID,sampleRunID,vthreshold,bthreshold))
+    _, _, _, _, speciesColorDict, strainTimes, _, microbeStrainsDF = \
+        speciesMullerTreeHostVirus(True,sampleRunID, DBSIM_PATH, DBTREE_PATH, maxticksize, 
+                            abundthresholdM, abundthresholdV,  filterStrains, 
+                            spacingM, spacingV, figxy)
+    immuneIDs = findImmuneIDs(runIDs,conSim)
+    immuneIDsNoV = findImmuneIDs(runIDsNoV,conSimNoV)
+    cladeIDs = findCladeIDs(runIDs,conSim)
+    ##########
+    noVdist, meanNoVDist = computeTraitDistribution(runIDsNoV,cIDNoV,conSimNoV)
+    dist, meanDist = computeTraitDistribution(runIDs,cID,conSim)
+    ## DIVERSITY
+    diversityStats = computeSpacerDistribution(runIDs,immuneIDs,conSim)
+    diversityStatsNoV = computeSpacerDistribution(runIDsNoV,immuneIDsNoV,conSimNoV)
+    ## Clade Immune Proportions
+    cladeDivAllN = computeCladeDiversity(runIDs,immuneIDs,cladeIDs,conSim)
+    cladeDiversity = cladeDivAllN[cladeDivAllN['n']>9]
+    #
+    vstats = computeVstats(runIDs,cID,conSim)
+    return vstats,meanDist,meanNoVDist,cladeDiversity,diversityStats,diversityStatsNoV,cID,cIDNoV,\
+                     micMutSpacer, strainTimes,microbeStrainsDF,speciesColorDict
+
+def make_suppfigure2(i,outer_grid,fig,resolve,simDir,scale,vstats,meanDist,meanNoVDist,cladeDiversity,diversityStats,diversityStatsNoV,ti,tf,cID,cIDNoV,\
+                     micMutSpacer, strainTimes,microbeStrainsDF,tree_parent_strain_id,tree_strain_id,speciesColorDict,rateName,diversity,propTitle):
+    inner_grid = outer_grid[i].subgridspec(3, 2, hspace=.095, wspace=.6, height_ratios=[1,1,4])
+    ax1 = fig.add_subplot(inner_grid[0:4, 0])
+    ax2 = fig.add_subplot(inner_grid[0:1, 1])
+    ax3 = fig.add_subplot(inner_grid[1:2, 1], sharex=ax2)
+    ax4 = fig.add_subplot(inner_grid[2:3, 1], sharex=ax2)
+    axes = [ax1, ax2, ax3, ax4,
+            ax1.twinx(),ax2.twinx(), ax3.twinx()]
+    for j in range(0,3):
+        # i = 0
+        axes[j].fill_between(vstats[vstats.t!=0]['t'],
+                            vstats[vstats.t!=0]['exp_vtotal'] -
+                            vstats[vstats.t!=0]['std_vtotal'],
+                            vstats[vstats.t!=0]['exp_vtotal'] +
+                            vstats[vstats.t!=0]['std_vtotal'], color='grey', alpha=0.1)
+        axes[j].plot(vstats['t'],
+                    vstats['exp_vtotal'],
+                    linewidth=2, color='grey', label='Viral Abund.', linestyle='solid', alpha=0.75)
+        lim = axes[j].get_ylim()
+        axes[j].set_ylim(0, lim[1])
+        axes[j].yaxis.tick_right()
+        # axes[i].set_xlim(0, 2000)
+        axes[j].tick_params(axis='x', labelsize=15)
+        # axes[i].set_xscale('log', base=10)
+        if j == 0:
+            axes[j].set_ylabel(ylabel='Viral Abundance',
+                            rotation=270, labelpad=25, fontsize=15)
+            axes[j].tick_params(axis='y', labelsize=15)
+            axes[j].yaxis.get_offset_text().set_fontsize(15)
+            axes[j].yaxis.set_label_position("right")
+        if j != 0:
+            # print(i)
+            axes[j].set_yticks([])
+    #
+    # axes[0].tick_params(axis='x', labelcolor='w', top=False,
+    #                     bottom=False, left=False, right=False)
+    axes[1].tick_params(axis='x', labelcolor='w', top=False,
+                        bottom=False, left=False, right=False)
+    axes[2].tick_params(axis='x', labelcolor='w', top=False,
+                    bottom=False, left=False, right=False)
+    axes[4].fill_between(meanDist[meanDist['combo_id'] == cID]['t'],
+                        meanDist[meanDist['combo_id'] == cID]['meanExp'] -
+                        meanDist[meanDist['combo_id'] == cID]['stdExp'],
+                        meanDist[meanDist['combo_id'] == cID]['meanExp'] +
+                        meanDist[meanDist['combo_id'] == cID]['stdExp'], color='mediumblue', alpha=0.3)
+    axes[4].plot(meanDist[meanDist['combo_id'] == cID]['t'],
+                meanDist[meanDist['combo_id'] == cID]['meanExp'],
+                linewidth=2, color='mediumblue', label=' '.join([r'$\sigma =$','{}'.format(scale)]))
+    axes[4].fill_between(meanNoVDist[meanNoVDist['combo_id'] == cIDNoV]['t'],
+                        meanNoVDist[meanNoVDist['combo_id'] == cIDNoV]['meanExp'] -
+                        meanNoVDist[meanNoVDist['combo_id']
+                                    == cIDNoV]['stdExp'],
+                        meanNoVDist[meanNoVDist['combo_id'] == cIDNoV]['meanExp'] +
+                        meanNoVDist[meanNoVDist['combo_id'] == cIDNoV]['stdExp'], color='lime', alpha=0.3)
+    axes[4].plot(meanNoVDist[meanNoVDist['combo_id'] == cIDNoV]['t'],
+                meanNoVDist[meanNoVDist['combo_id'] == cIDNoV]['meanExp'],
+                linewidth=2, color='lime', label=' '.join([r'$\sigma =$','{},'.format(scale),'no virus']), linestyle='dashed')
+    ##
+    cladeIDX = strainTimes[strainTimes[tree_parent_strain_id] == 0]\
+                .merge(microbeStrainsDF,on=['tree_bstrain_id']).sort_values(by=['tree_bstrain_id'])
+    cladeIDX = cladeIDX[['tree_bstrain_id','bstrain_id','growth_rate']]
+    for cladeID in cladeIDX['bstrain_id']:
+        speciesID = microbeStrainsDF[microbeStrainsDF.bstrain_id == cladeID][tree_strain_id].values[0]
+        axes[3].fill_between(cladeDiversity[cladeDiversity.clade_id == cladeID]['t'],
+                        cladeDiversity[cladeDiversity.clade_id == cladeID]['prop_richness_mean'] -
+                        cladeDiversity[cladeDiversity.clade_id ==
+                                        cladeID]['prop_richness_std'],
+                        cladeDiversity[cladeDiversity.clade_id == cladeID]['prop_richness_mean'] +
+                        cladeDiversity[cladeDiversity.clade_id == cladeID]['prop_richness_std'], 
+                        color=speciesColorDict[speciesID], alpha=0.3)
+    #
+    for cladeID in cladeIDX['bstrain_id']:
+        gRate = cladeIDX[cladeIDX.bstrain_id == cladeID]['growth_rate'].values[0]
+        speciesID = microbeStrainsDF[microbeStrainsDF.bstrain_id == cladeID][tree_strain_id].values[0]
+        axes[3].plot(cladeDiversity[cladeDiversity.clade_id == cladeID]['t'],
+                cladeDiversity[cladeDiversity.clade_id ==
+                                cladeID]['prop_richness_mean'],
+                color=speciesColorDict[speciesID], \
+                    label=' '.join([r" $\sim$","{}".format(np.round(gRate,3))]),\
+                    linewidth=2, linestyle='solid',alpha=0.75)
+    #
+    axes[5].fill_between(diversityStats['t'],
+                        diversityStats['simpson_mean'] -
+                        diversityStats['simpson_std'],
+                        diversityStats['simpson_mean'] +
+                        diversityStats['simpson_std'], color='mediumblue', alpha=0.3)
+    axes[5].plot(diversityStats['t'],
+                diversityStats['simpson_mean'],
+                linewidth=2, color='mediumblue')
+    axes[5].fill_between(diversityStatsNoV['t'],
+                        diversityStatsNoV['simpson_mean'] -
+                        diversityStatsNoV['simpson_std'],
+                        diversityStatsNoV['simpson_mean'] +
+                        diversityStatsNoV['simpson_std'], color='lime', alpha=0.3)
+    axes[5].plot(diversityStatsNoV['t'],
+                diversityStatsNoV['simpson_mean'],
+                linewidth=2, color='lime', linestyle='dashed')
+    #
+    axes[6].fill_between(diversityStats['t'],
+                        diversityStats['richness_mean'] -
+                        diversityStats['richness_std'],
+                        diversityStats['richness_mean'] +
+                        diversityStats['richness_std'], color='mediumblue', alpha=0.3)
+    axes[6].plot(diversityStats['t'],
+                diversityStats['richness_mean'],
+                linewidth=2, color='mediumblue')
+    axes[6].fill_between(diversityStatsNoV['t'],
+                        diversityStatsNoV['richness_mean'] -
+                        diversityStatsNoV['richness_std'],
+                        diversityStatsNoV['richness_mean'] +
+                        diversityStatsNoV['richness_std'], color='lime', alpha=0.3)
+    axes[6].plot(diversityStatsNoV['t'],
+                diversityStatsNoV['richness_mean'],
+                linewidth=2, color='lime', linestyle='dashed')
+        #
+        #
+    axes[0].set_xscale('log', base=10)
+    axes[1].set_xscale('log', base=10)
+    axes[3].tick_params(axis='x', labelsize=15)
+    axes[3].tick_params(axis='y', labelsize=15)
+    axes[4].tick_params(axis='x', labelsize=15)
+    axes[4].tick_params(axis='y', labelsize=15)
+    axes[5].tick_params(axis='x', labelsize=15)
+    axes[5].tick_params(axis='y', labelsize=10)
+    axes[6].tick_params(axis='x', labelsize=15)
+    axes[6].tick_params(axis='y', labelsize=10)
+    axes[4].yaxis.set_label_position("left")
+    axes[4].yaxis.tick_left()
+    axes[5].yaxis.set_label_position("left")
+    axes[5].yaxis.tick_left()
+    axes[6].yaxis.set_label_position("left")
+    axes[6].yaxis.tick_left()
+    s = ['Expected\n{0} Mean '.format(rateName), r'$\mathbb{E}[\bar{r}]$']
+    axes[4].set_ylabel(
+        ylabel=r''.join(s), labelpad=10, fontsize=15)
+    axes[3].set_ylabel(ylabel='Fraction of\n{}'.format(diversity), labelpad=10, fontsize=15)
+    axes[6].set_ylabel(ylabel = 'Immune\nRichness',labelpad=10,fontsize=10)
+    axes[5].set_ylabel(ylabel = 'Immune\nSimpson\nIndex',labelpad=10,fontsize=10)
+
+    handles = []
+    labels = []
+    handle, label = axes[0].get_legend_handles_labels()
+    handles.extend(handle)
+    labels.extend(label)
+    handle, label = axes[4].get_legend_handles_labels()
+    handles.extend(handle)
+    labels.extend(label)
+    axes[4].legend(handles, labels, loc='lower left', fontsize=12)
+    handles = []
+    labels = []
+    handle, label = axes[3].get_legend_handles_labels()
+    handles.extend(handle[::-1])
+    labels.extend(label[::-1])
+    axes[3].legend(handles,labels,loc='upper center', fontsize=8.5, title=propTitle, title_fontsize=8.5,ncol=4)        
+    axes[3].set_xlabel(xlabel='Time', fontsize=15, labelpad=8)
+    axes[4].set_xlabel(xlabel='Time', fontsize=15, labelpad=8)
+    axes[0].set_xlabel(xlabel='Time', fontsize=15, labelpad=8)
+    axes[0].set_xlim(ti, tf)
+    axes[1].set_xlim(ti, tf)
+    axes[4].set_xlim(ti, tf)
+    axes[5].set_xlim(ti, tf)
+    axes[2].set_xlim(ti, tf)
+    axes[3].set_xlim(ti, tf)
+    axes[5].set_xlim(ti, tf)
+    if cID == 108:
+        lim = axes[3].get_ylim()
+        axes[3].set_ylim(0, lim[1])
+    axes[4].text(10.5, 1, r"$\mu_s =$ {}".format(micMutSpacer),
+            fontsize=20, horizontalalignment='left', verticalalignment='center')
+    ##
+    return fig
