@@ -75,7 +75,7 @@ Infect:
 
 Please request simulation and analysis ouputs from author, or generate such output on a cluster. Note that such files range from 50 to 200 GB each. Therefore storage resources are crucial to be allocated beforehand. For assistance email armun@uchicago.edu. 
 
-Outputs will be organized into databases (.sqlite) that should be placed the same directory as the following scripts listed below. 
+Outputs will be organized into databases (.sqlite) that should be placed in the same directory as the following scripts listed below. 
 
 ### Figure 1, 2 & 3 and Supplementary Figure 1 & 2
 Run the following
